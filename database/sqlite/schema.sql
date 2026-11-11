@@ -184,6 +184,8 @@ CREATE TABLE IF NOT EXISTS feedback_case (
     reason TEXT NOT NULL DEFAULT '',
     evidence TEXT NOT NULL DEFAULT '',
     case_ref TEXT NOT NULL DEFAULT '',
+    reported_at REAL,
+    report_error TEXT NOT NULL DEFAULT '',
     created_at REAL NOT NULL,
     updated_at REAL NOT NULL,
     checked_at REAL,

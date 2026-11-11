@@ -37,11 +37,17 @@ class Store:
 
     def _migrate(self) -> None:
         """为已存在的库补列；新建库由 schema.sql 直接建全。"""
-        if self.adapter.NAME == "sqlite":
-            columns = {row[1] for row in self.connection.execute("PRAGMA table_info(store_info)")}
-            if columns and "oauth" not in columns:
-                self.connection.execute("ALTER TABLE store_info ADD COLUMN oauth TEXT NOT NULL DEFAULT ''")
-                self.connection.commit()
+        if self.adapter.NAME != "sqlite":
+            return
+        self._add_column("store_info", "oauth", "TEXT NOT NULL DEFAULT ''")
+        self._add_column("feedback_case", "reported_at", "REAL")
+        self._add_column("feedback_case", "report_error", "TEXT NOT NULL DEFAULT ''")
+
+    def _add_column(self, table: str, column: str, definition: str) -> None:
+        columns = {row[1] for row in self.connection.execute(f"PRAGMA table_info({table})")}
+        if columns and column not in columns:
+            self.connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+            self.connection.commit()
 
     def _sql(self, sql: str) -> str:
         return self.adapter.placeholders(sql)

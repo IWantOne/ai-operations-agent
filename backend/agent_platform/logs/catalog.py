@@ -27,7 +27,8 @@ GROUPS = [
         "task_enabled": "启用任务", "task_disabled": "停用任务", "window_wait": "执行申请店铺窗口"}),
     ("execution_log", "execution", "feedback", "", {
         "feedback_synced": "差评同步完成", "feedback_sync_failed": "差评同步失败",
-        "feedback_sync_skipped": "差评同步跳过", "feedback_processed": "差评处理完成"}),
+        "feedback_sync_skipped": "差评同步跳过", "feedback_processed": "差评处理完成",
+        "feedback_reported": "差评结果回传完成", "feedback_report_failed": "差评结果回传失败"}),
     ("resource_log", "resources", "window", "", {
         "RECONCILED": "窗口核验完成", "INSPECT_FAILED": "窗口核验失败", "ACQUIRED": "获得窗口",
         "OPEN_REJECTED": "开窗被拒且核验未打开", "OPEN_FAILED": "打开窗口失败", "OWNERSHIP_CONFLICT": "窗口归属冲突",

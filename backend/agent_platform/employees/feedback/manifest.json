@@ -22,6 +22,16 @@
       "input": {"limit": 3},
       "timeout_seconds": 1800,
       "schedules": []
+    },
+    {
+      "name": "差评回传",
+      "task_key": "feedback.report",
+      "handler": "feedback.report",
+      "input": {},
+      "timeout_seconds": 300,
+      "schedules": [
+        {"key": "每 15 分钟", "interval_seconds": 900}
+      ]
     }
   ]
 }

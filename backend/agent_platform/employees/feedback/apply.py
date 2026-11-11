@@ -12,6 +12,12 @@ REASON_LABELS = ("商品反馈", "与商品有关", "product review", "product f
 CONTINUE_LABELS = ("continue", "next", "继续", "下一步", "次の")
 SUBMIT_LABELS = ("submit", "提交", "送信")
 
+# 每步点之前先看页面像不像这一步；不像就停，避免在错误页面上乱点。
+GUARDS = {
+    "商品反馈": ("原因", "reason", "feedback", "商品", "review"),
+    "提交": ("移除", "删除", "removal", "submit", "审核", "review"),
+}
+
 CLICK_BY_TEXT = r"""(()=>{const labels=__LABELS__;
 const walk=root=>{const out=[];const visit=r=>{for(const e of r.querySelectorAll('*')){
  const text=(e.innerText||'').trim().toLowerCase();
@@ -56,6 +62,13 @@ async def run(ctx, shop, order_id):
     page = await _page(ctx, shop)
     for step, labels in (("请求审核", REQUEST_LABELS), ("商品反馈", REASON_LABELS),
                          ("继续", CONTINUE_LABELS), ("提交", SUBMIT_LABELS)):
+        guard = GUARDS.get(step)
+        if guard:
+            text = str(page.get("text") or "").lower()
+            if not any(marker.lower() in text for marker in guard):
+                evidence["page_text"] = (page.get("text") or "")[:3000]
+                evidence["url"] = page.get("url")
+                return "MANUAL", f"申请流程停在“{step}”：当前页面不像这一步，页面文本已记录", evidence
         clicked = await _click(ctx, shop, labels)
         evidence["steps"].append({"step": step, "clicked": clicked.get("clicked", False),
                                   "text": clicked.get("text", "")})
