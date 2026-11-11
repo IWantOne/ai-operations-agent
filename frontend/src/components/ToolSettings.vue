@@ -1,6 +1,7 @@
 <script setup>
 import { inject, reactive, ref } from "vue";
 import { request } from "../api/platform";
+import ZiniaoConnection from "./ZiniaoConnection.vue";
 
 const { state, refresh } = inject("workbench");
 
@@ -9,18 +10,13 @@ const command = ref(codex?.codex_command ?? "");
 const args = ref(codex?.codex_args ?? "");
 const busy = ref(false), message = ref(""), failed = ref(false);
 
-const erp = state.value.settings?.erp;
-const baseUrl = ref(erp?.base_url ?? "https://test.effiseller.com");
-const appId = ref(erp?.app_id ?? "");
-const appSecret = ref("");
-const erpBusy = ref(false), erpMessage = ref(""), erpFailed = ref(false);
-
-// 通用外部应用：飞书、领星等，API 与 MCP 两种传输。
+// 所有外部应用走同一个列表：飞书、领星、智易飞。认证方式随接入方固定，页面只填凭据。
 const integrations = state.value.settings?.integrations || {};
 const forms = reactive({});
 for (const [key, value] of Object.entries(integrations)) {
   forms[key] = { ...value, app_secret: "", busy: false, message: "", failed: false };
 }
+const authLabels = { token: "先换 token 再带 Bearer", headers: "App ID／Secret 放请求头", none: "不带认证" };
 
 async function post(payload) {
   return request("action", {
@@ -36,7 +32,7 @@ async function saveCodex() {
   busy.value = true;
   try {
     await post({ action: "save_tool_settings", codex_command: command.value, codex_args: args.value });
-    message.value = "配置已保存，下次工具调用生效。";
+    message.value = "配置已保存，下次工具调用立即生效。";
     await refresh();
   } catch (e) {
     failed.value = true;
@@ -46,51 +42,6 @@ async function saveCodex() {
   }
 }
 
-async function saveErp() {
-  if (erpBusy.value) return;
-  erpMessage.value = "";
-  erpFailed.value = false;
-  erpBusy.value = true;
-  try {
-    await post({ action: "save_erp_settings", base_url: baseUrl.value,
-                 app_id: appId.value, app_secret: appSecret.value });
-    appSecret.value = "";
-    erpMessage.value = "配置已保存，凭据加密存放。";
-    await refresh();
-  } catch (e) {
-    erpFailed.value = true;
-    erpMessage.value = e.message;
-  } finally {
-    erpBusy.value = false;
-  }
-}
-
-async function testErp() {
-  if (erpBusy.value) return;
-  erpMessage.value = "";
-  erpFailed.value = false;
-  erpBusy.value = true;
-  try {
-    const result = await post({ action: "test_erp" });
-    const erpResult = result.erp || {};
-    erpMessage.value = `连接成功：可访问店铺 ${erpResult.stores ?? "未提供"} 家` +
-      (Array.isArray(erpResult.api_types) ? `（${erpResult.api_types.join("、")}）` : "");
-  } catch (e) {
-    erpFailed.value = true;
-    erpMessage.value = e.message;
-  } finally {
-    erpBusy.value = false;
-  }
-}
-
-function payloadOf(form) {
-  return {
-    transport: form.transport, base_url: form.base_url, app_id: form.app_id,
-    app_secret: form.app_secret, auth: form.auth, token_path: form.token_path,
-    token_field: form.token_field, mcp_command: form.mcp_command,
-  };
-}
-
 async function saveIntegration(key) {
   const form = forms[key];
   if (form.busy) return;
@@ -98,9 +49,12 @@ async function saveIntegration(key) {
   form.failed = false;
   form.busy = true;
   try {
-    await post({ action: "save_integration", provider: key, ...payloadOf(form) });
+    await post({ action: "save_integration", provider: key,
+                 transport: form.transport, base_url: form.base_url, app_id: form.app_id,
+                 app_secret: form.app_secret, token_path: form.token_path,
+                 token_field: form.token_field, mcp_command: form.mcp_command });
     form.app_secret = "";
-    form.message = "配置已保存，凭据加密存放。";
+    form.message = "配置已保存，下次调用立即生效。";
     await refresh();
   } catch (e) {
     form.failed = true;
@@ -121,6 +75,9 @@ async function testIntegration(key) {
     if (result.transport === "mcp") {
       form.message = `MCP 可用：${result.tools ?? 0} 个工具` +
         (Array.isArray(result.names) && result.names.length ? `（${result.names.join("、")}）` : "");
+    } else if (result.stores !== undefined) {
+      form.message = `连接成功：可访问店铺 ${result.stores ?? "未提供"} 家` +
+        (Array.isArray(result.api_types) ? `（${result.api_types.join("、")}）` : "");
     } else if (result.auth === "token") {
       form.message = "认证成功，token 已获取。";
     } else {
@@ -136,6 +93,8 @@ async function testIntegration(key) {
 </script>
 
 <template>
+  <div class="tool-grid">
+  <ZiniaoConnection />
   <section class="ap-panel tool-panel">
     <div class="ap-panelhead">
       <div><h2>Codex</h2>
@@ -161,47 +120,17 @@ async function testIntegration(key) {
     </form>
   </section>
 
-  <section class="ap-panel tool-panel">
-    <div class="ap-panelhead">
-      <div><h2>智易飞</h2><p>Amazon 原生 API 通道：店铺查询与 SP-API／Ads 请求透传。</p></div>
-      <span class="ap-badge">{{ erp?.secret_set ? '已配置凭据' : '未配置' }}</span>
-    </div>
-    <p v-if="!erp" role="alert">当前服务尚不支持智易飞配置，请重启后端服务后刷新页面。</p>
-    <form @submit.prevent="saveErp" @input="erpMessage = ''">
-      <fieldset :disabled="erpBusy || !erp">
-        <label>部署地址
-          <input v-model="baseUrl" placeholder="https://test.effiseller.com" />
-        </label>
-        <label>App ID
-          <input v-model="appId" placeholder="管理员提供的 App ID" />
-        </label>
-        <label>App Secret
-          <input v-model="appSecret" type="password" autocomplete="new-password"
-                 :placeholder="erp?.secret_set ? '已保存；留空表示不修改' : '管理员提供的 App Secret'" />
-        </label>
-        <p class="ap-muted">
-          App Secret 用本机用户凭据加密后保存，页面不回显。请求超时在「时间与停止策略」里配置。
-          业务通过 <code>ctx.tool("amazon.stores")</code> 和
-          <code>ctx.tool("amazon.request", sid=..., api_type="sp-api", method="GET", path="/sellers/v1/marketplaceParticipations")</code> 使用。
-        </p>
-        <div>
-          <button type="submit" class="ap-btn primary">{{ erpBusy ? '处理中…' : '保存配置' }}</button>
-          <button type="button" class="ap-link" @click="testErp">测试连接</button>
-        </div>
-      </fieldset>
-      <p v-if="erpMessage" :role="erpFailed ? 'alert' : 'status'">{{ erpMessage }}</p>
-    </form>
-  </section>
-
   <section v-for="(form, key) in forms" :key="key" class="ap-panel tool-panel">
     <div class="ap-panelhead">
       <div><h2>{{ form.label }}</h2>
-        <p>API 或 MCP 接入，业务通过 <code>api.request</code>／<code>mcp.call</code> 使用。</p></div>
+        <p v-if="key === 'effiseller'">Amazon 原生 API 通道：店铺查询与 SP-API／Ads 请求透传。</p>
+        <p v-else>外部应用接入，业务通过 <code>api.request</code> 或 <code>mcp.call</code> 使用。</p>
+      </div>
       <span class="ap-badge">{{ form.secret_set ? '已配置凭据' : '未配置' }}</span>
     </div>
     <form @submit.prevent="saveIntegration(key)" @input="form.message = ''">
       <fieldset :disabled="form.busy">
-        <label>传输方式
+        <label v-if="form.transports.length > 1">传输方式
           <select v-model="form.transport">
             <option value="api">API（HTTP）</option>
             <option value="mcp">MCP（stdio）</option>
@@ -218,13 +147,6 @@ async function testIntegration(key) {
             <input v-model="form.app_secret" type="password" autocomplete="new-password"
                    :placeholder="form.secret_set ? '已保存；留空表示不修改' : '应用 App Secret'" />
           </label>
-          <label>认证方式
-            <select v-model="form.auth">
-              <option value="token">先换 token，再带 Bearer</option>
-              <option value="headers">App ID／Secret 放请求头</option>
-              <option value="none">不带认证</option>
-            </select>
-          </label>
           <template v-if="form.auth === 'token'">
             <label>获取 token 的路径
               <input v-model="form.token_path" placeholder="/open-apis/auth/v3/tenant_access_token/internal" />
@@ -240,9 +162,15 @@ async function testIntegration(key) {
           </label>
         </template>
         <p class="ap-muted">
-          请求超时在「时间与停止策略」里配置。API 工具：
-          <code>ctx.tool("api.request", provider="{{ key }}", method="GET", path="/...")</code>；
-          MCP 工具：<code>ctx.tool("mcp.call", provider="{{ key }}", tool="...", arguments={})</code>。
+          认证方式：{{ authLabels[form.auth] || form.auth }}（随接入方固定）。请求超时在「时间与停止策略」里配置。
+          <template v-if="key === 'effiseller'">
+            业务通过 <code>ctx.tool("amazon.stores")</code> 和
+            <code>ctx.tool("amazon.request", sid=..., api_type="sp-api", method="GET", path="/sellers/v1/marketplaceParticipations")</code> 使用。
+          </template>
+          <template v-else>
+            API：<code>ctx.tool("api.request", provider="{{ key }}", method="GET", path="/...")</code>；
+            MCP：<code>ctx.tool("mcp.call", provider="{{ key }}", tool="...", arguments={})</code>。
+          </template>
         </p>
         <div>
           <button type="submit" class="ap-btn primary">{{ form.busy ? '处理中…' : '保存配置' }}</button>
@@ -252,10 +180,12 @@ async function testIntegration(key) {
       <p v-if="form.message" :role="form.failed ? 'alert' : 'status'">{{ form.message }}</p>
     </form>
   </section>
+  </div>
 </template>
 
 <style scoped>
-.tool-panel {width:min(100%,660px);margin-bottom:16px}
+.tool-grid {display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;align-items:start}
+.tool-panel {width:100%;margin:0}
 fieldset {padding:0;border:none;display:grid;gap:14px;margin:0;min-width:0}
 label {display:grid;gap:8px;font-size:13px}
 input,select {width:100%;box-sizing:border-box;font:inherit;padding:8px;border-radius:5px;border:1px solid var(--ap-line);background:var(--ap-panel);color:var(--ap-text)}

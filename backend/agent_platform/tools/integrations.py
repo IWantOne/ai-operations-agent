@@ -24,6 +24,9 @@ def build_mcp(manager, provider):
 async def probe(manager, provider):
     """配置页“测试连接”用：API 取 token 或打一次根路径，MCP 列一次工具。"""
     public = manager.integration_settings.public(provider)
+    if provider == "effiseller":
+        from .effiseller import probe as erp_probe
+        return await erp_probe(manager)
     if public["transport"] == "mcp":
         async with build_mcp(manager, provider) as client:
             tools = await client.list_tools()

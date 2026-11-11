@@ -58,11 +58,6 @@ def start_panel(manager, port=8765, *, browser_label="紫鸟", shutdown_event=No
             return {"queue": manager.queue_settings.save(values)}
         if name == "save_tool_settings":
             return {"tools": manager.tool_settings.save(values)}
-        if name == "save_erp_settings":
-            return {"erp": manager.erp_settings.save(values)}
-        if name == "test_erp":
-            from ..tools.effiseller import probe
-            return {"erp": await probe(manager)}
         if name == "save_integration":
             provider = values.get("provider")
             return {"integration": manager.integration_settings.save(provider, values)}

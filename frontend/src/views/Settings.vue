@@ -1,6 +1,5 @@
 <script setup>
 import { inject, onMounted, ref } from "vue";
-import ZiniaoConnection from "../components/ZiniaoConnection.vue";
 import QueueSettings from "../components/QueueSettings.vue";
 import RetrySettings from "../components/RetrySettings.vue";
 import TimingSettings from "../components/TimingSettings.vue";
@@ -8,8 +7,8 @@ import ToolSettings from "../components/ToolSettings.vue";
 import { object, request } from "../api/platform";
 const { state, openTask, navigate } = inject("workbench");
 // Categories group independent policies; add future categories here.
-const categories = { connections: 'API 设置', tools: '工具', queue: '统一执行控制', tasks: '任务配置', runtime: '时间与停止策略' };
-const tab = ref("connections"),
+const categories = { tools: '工具', queue: '统一执行控制', tasks: '任务配置', runtime: '时间与停止策略' };
+const tab = ref("tools"),
   skills = ref({}),
   error = ref("");
 const employeeName = (key) => state.value.employees?.find((employee) => employee.key === key)?.name || key;
@@ -43,8 +42,7 @@ onMounted(loadSkills);
       {{ label }}
     </button>
   </div>
-  <ZiniaoConnection v-if="tab === 'connections'" />
-  <ToolSettings v-else-if="tab === 'tools'" />
+  <ToolSettings v-if="tab === 'tools'" />
   <template v-else-if="tab === 'queue'"><QueueSettings /><RetrySettings /></template>
   <TimingSettings v-else-if="tab === 'runtime'" />
   <div v-else class="ap-config">

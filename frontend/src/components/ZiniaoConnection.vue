@@ -97,7 +97,7 @@ async function submit(save) {
   </section>
 </template>
 <style scoped>
-.connection-panel {width:min(100%,660px)}
+.connection-panel {width:100%;margin:0}
 fieldset {padding:0;border:none;display:grid;gap:14px;margin:0}
 #agent-console-demo fieldset label {font-size:13px}
 input,select {width:100%;font:inherit;padding:8px;border-radius:5px;border:1px solid var(--ap-line);background:var(--ap-panel);color:var(--ap-text)}

@@ -2,7 +2,8 @@
 
 - ``amazon.stores``：列出当前应用可访问的店铺（只读，可安全重跑）。
 - ``amazon.request``：按 Amazon 官方文档传 api_type / method / path / query / body。
-- 配置在「配置 → 工具」，凭据加密保存；超时取 settings/timing.py 的 erp_timeout_seconds。
+- 配置在「配置 → 工具」的统一接入列表里（provider=effiseller），凭据加密保存；
+  每次调用都重新读配置，保存后立即生效。超时取 settings/timing.py 的 erp_timeout_seconds。
 - 日志由 ToolRegistry 写 tool_call_log，不在这里另写。
 """
 import asyncio
@@ -11,7 +12,7 @@ from ..connectors.effiseller import EffisellerClient
 
 
 def build_client(manager):
-    settings = manager.erp_settings.read()
+    settings = manager.integration_settings.read("effiseller")
     timeout = manager.timing_settings.read()["erp_timeout_seconds"]
     return EffisellerClient(settings["base_url"], settings["app_id"], settings["app_secret"], timeout)
 

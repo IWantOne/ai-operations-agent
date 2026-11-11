@@ -9,11 +9,12 @@ import json
 from ..logs.writer import LogWriter
 from .secrets import protect
 
-# 已知接入方的默认值；页面上的可编辑项都在这里定义。
+# 已知接入方的默认值；页面上的可编辑项都在这里定义。auth/transport 是逻辑，默认不给改。
 PROVIDERS = {
     "feishu": {
         "label": "飞书",
         "transport": "api",
+        "transports": ("api", "mcp"),
         "base_url": "https://open.feishu.cn",
         "auth": "token",
         "token_path": "/open-apis/auth/v3/tenant_access_token/internal",
@@ -23,8 +24,19 @@ PROVIDERS = {
     "lingxing": {
         "label": "领星",
         "transport": "api",
+        "transports": ("api", "mcp"),
         "base_url": "",
         "auth": "token",
+        "token_path": "",
+        "token_field": "access_token",
+        "mcp_command": "",
+    },
+    "effiseller": {
+        "label": "智易飞",
+        "transport": "api",
+        "transports": ("api",),
+        "base_url": "https://test.effiseller.com",
+        "auth": "headers",
         "token_path": "",
         "token_field": "access_token",
         "mcp_command": "",
@@ -63,6 +75,7 @@ class IntegrationSettings:
         preset = PROVIDERS[provider]
         saved = self._saved(provider)
         return {"label": preset["label"], **{field: saved.get(field, preset[field]) for field in FIELDS},
+                "transports": list(preset["transports"]),
                 "app_id": saved.get("app_id", ""), "secret_set": bool(saved.get("app_secret"))}
 
     def all_public(self):
@@ -72,10 +85,11 @@ class IntegrationSettings:
         preset = PROVIDERS[provider]
         current = self._saved(provider)
         merged = {field: values.get(field, current.get(field, preset[field])) for field in FIELDS}
+        merged["auth"] = preset["auth"]  # 认证方式是逻辑，随接入方固定
         app_id = values.get("app_id", current.get("app_id", ""))
         secret = values.get("app_secret", "")
-        if merged["transport"] not in TRANSPORTS:
-            raise ValueError("传输方式只能是 api 或 mcp")
+        if merged["transport"] not in preset["transports"]:
+            raise ValueError(f"{preset['label']} 只支持 {'、'.join(preset['transports'])} 传输")
         if merged["auth"] not in AUTH_MODES:
             raise ValueError("认证方式只能是 token、headers 或 none")
         if not isinstance(merged["base_url"], str) or len(merged["base_url"]) > 512:

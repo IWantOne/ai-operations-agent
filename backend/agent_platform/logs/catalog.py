@@ -18,7 +18,7 @@ GROUPS = [
     ("system_log", "system", "settings", "", {
         "queue_settings_saved": "保存统一队列容量", "timing_settings_saved": "保存时间与停止策略",
         "retry_settings_saved": "保存任务重试策略", "tool_settings_saved": "保存工具配置",
-        "erp_settings_saved": "保存智易飞配置", "integration_settings_saved": "保存外部应用配置"}),
+        "integration_settings_saved": "保存外部应用配置"}),
     ("execution_log", "execution", "schedule", "", {
         "schedule_error": "定时计划错误并停用", "work_queued": "工作请求入队", "work_finished": "工作尝试结束", "schedule_skip": "跳过重叠调度",
         "schedule_missed_during_restart": "记录重启期间错过的调度"}),
