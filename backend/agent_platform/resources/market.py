@@ -232,12 +232,6 @@ async def switch_market(ctx, shop, code, timeout):
     expanded = 0
     candidates = []
     while asyncio.get_running_loop().time() < deadline:
-        state = await read(ctx, shop)
-        if state.get("accountCard") and expanded < 3:
-            expanded += 1
-            await _click(ctx, shop, state["accountCard"])
-            await ctx.sleep(2)
-            continue
         expression = SELECT_JS.replace("__CODE__", json.dumps(code)) \
                               .replace("__LABELS__", json.dumps([CHINESE.get(code, ""), ENGLISH.get(code, "")],
                                                                 ensure_ascii=False))
@@ -247,6 +241,14 @@ async def switch_market(ctx, shop, code, timeout):
         if data.get("clicked"):
             clicked = data.get("text")
             break
+        # 先找行；找不到才点一次账号卡片展开。反过来会把已经展开的卡片又收起来。
+        if expanded < 1:
+            state = await read(ctx, shop)
+            if state.get("accountCard"):
+                expanded += 1
+                await _click(ctx, shop, state["accountCard"])
+                await ctx.sleep(2)
+                continue
         await ctx.sleep(2)
     if not clicked:
         raise RuntimeError(f"账号切换器里没有找到 {CHINESE.get(code, code)} 的站点行；"
