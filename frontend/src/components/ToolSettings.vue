@@ -13,8 +13,10 @@ const busy = ref(false), message = ref(""), failed = ref(false);
 // 所有外部应用走同一个列表：飞书、领星、智易飞。认证方式随接入方固定，页面只填凭据。
 const integrations = state.value.settings?.integrations || {};
 const forms = reactive({});
+const open = reactive({ codex: false });
 for (const [key, value] of Object.entries(integrations)) {
   forms[key] = { ...value, app_secret: "", busy: false, message: "", failed: false };
+  open[key] = false;
 }
 const authLabels = { token: "先换 token 再带 Bearer", headers: "App ID／Secret 放请求头", none: "不带认证" };
 
@@ -96,13 +98,15 @@ async function testIntegration(key) {
   <div class="tool-grid">
   <ZiniaoConnection />
   <section class="ap-panel tool-panel">
-    <div class="ap-panelhead">
+    <div class="ap-panelhead" role="button" tabindex="0" :aria-expanded="open.codex"
+         @click="open.codex = !open.codex" @keydown.enter.prevent="open.codex = !open.codex">
       <div><h2>Codex</h2>
         <p>把本机 codex-cli 当作工具调用，业务通过 <code>ctx.tool("codex", prompt=...)</code> 使用。</p></div>
       <span class="ap-badge">{{ codex?.codex_command ? '自定义路径' : '使用 PATH 中的 codex' }}</span>
+      <span class="chev">{{ open.codex ? '▾' : '▸' }}</span>
     </div>
     <p v-if="!codex" role="alert">当前服务尚不支持工具配置，请重启后端服务后刷新页面。</p>
-    <form @submit.prevent="saveCodex" @input="message = ''">
+    <form v-show="open.codex" @submit.prevent="saveCodex" @input="message = ''">
       <fieldset :disabled="busy || !codex">
         <label>可执行文件路径
           <input v-model="command" placeholder="留空使用 PATH 中的 codex" />
@@ -121,14 +125,16 @@ async function testIntegration(key) {
   </section>
 
   <section v-for="(form, key) in forms" :key="key" class="ap-panel tool-panel">
-    <div class="ap-panelhead">
+    <div class="ap-panelhead" role="button" tabindex="0" :aria-expanded="open[key]"
+         @click="open[key] = !open[key]" @keydown.enter.prevent="open[key] = !open[key]">
       <div><h2>{{ form.label }}</h2>
         <p v-if="key === 'effiseller'">Amazon 原生 API 通道：店铺查询与 SP-API／Ads 请求透传。</p>
         <p v-else>外部应用接入，业务通过 <code>api.request</code> 或 <code>mcp.call</code> 使用。</p>
       </div>
       <span class="ap-badge">{{ form.secret_set ? '已配置凭据' : '未配置' }}</span>
+      <span class="chev">{{ open[key] ? '▾' : '▸' }}</span>
     </div>
-    <form @submit.prevent="saveIntegration(key)" @input="form.message = ''">
+    <form v-show="open[key]" @submit.prevent="saveIntegration(key)" @input="form.message = ''">
       <fieldset :disabled="form.busy">
         <label v-if="form.transports.length > 1">传输方式
           <select v-model="form.transport">
@@ -186,6 +192,8 @@ async function testIntegration(key) {
 <style scoped>
 .tool-grid {display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;align-items:start}
 .tool-panel {width:100%;margin:0}
+.ap-panelhead {cursor:pointer;user-select:none}
+.chev {margin-left:8px;color:var(--ap-muted);font-size:12px}
 fieldset {padding:0;border:none;display:grid;gap:14px;margin:0;min-width:0}
 label {display:grid;gap:8px;font-size:13px}
 input,select {width:100%;box-sizing:border-box;font:inherit;padding:8px;border-radius:5px;border:1px solid var(--ap-line);background:var(--ap-panel);color:var(--ap-text)}

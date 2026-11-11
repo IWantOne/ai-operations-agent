@@ -26,6 +26,7 @@ async function detectPort() {
   } finally { detecting.value = false; }
 }
 const busy = ref(false), message = ref(""), failed = ref(false);
+const open = ref(false);
 watch(mode, value => {
   if (value === "webdriver" && !port.value) detectPort();
 }, {immediate:true});
@@ -60,10 +61,14 @@ async function submit(save) {
 </script>
 <template>
   <section class="ap-panel connection-panel">
-    <div class="ap-panelhead"><div><h2>紫鸟连接</h2>
+    <div class="ap-panelhead" role="button" tabindex="0" :aria-expanded="open"
+         @click="open = !open" @keydown.enter.prevent="open = !open">
+      <div><h2>紫鸟连接</h2>
       <p>{{ state.connection?.mode === 'webdriver' ? '已保存 WebDriver · 本机端口 ' + state.connection.port : state.connection ? '使用本机紫鸟 CLI' : '尚未载入连接设置' }}</p></div>
       <span class="ap-badge">{{ state.connection?.mode === 'webdriver' ? '当前使用 WebDriver' : state.connection ? '当前使用 CLI' : '当前服务不支持配置' }}</span>
+      <span class="chev">{{ open ? '▾' : '▸' }}</span>
     </div>
+    <div v-show="open">
     <p v-if="!state.connection" class="ap-muted">当前服务尚未载入连接设置。请停止服务，再运行项目的 deploy/start.ps1，刷新此页即可配置。</p>
     <form @submit.prevent="submit(true)" @input="message = ''">
       <fieldset :disabled="busy || !state.connection">
@@ -94,10 +99,13 @@ async function submit(save) {
       <button v-if="state.connection?.mode === 'webdriver'" type="button" class="ap-link" @click="navigate({menu:'resources'})">查看账户与店铺</button>
       <p v-if="message" :role="failed ? 'alert' : 'status'">{{ message }}</p>
     </form>
+    </div>
   </section>
 </template>
 <style scoped>
 .connection-panel {width:100%;margin:0}
+.ap-panelhead {cursor:pointer;user-select:none}
+.chev {margin-left:8px;color:var(--ap-muted);font-size:12px}
 fieldset {padding:0;border:none;display:grid;gap:14px;margin:0}
 #agent-console-demo fieldset label {font-size:13px}
 input,select {width:100%;font:inherit;padding:8px;border-radius:5px;border:1px solid var(--ap-line);background:var(--ap-panel);color:var(--ap-text)}
