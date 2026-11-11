@@ -108,16 +108,31 @@ return {gate,blockedBy:blocked,ready:document.readyState,host:location.host,
  savedAccount:groups.length===1&&groups[0]&&(groups[0].id='platform-saved-login-account')?'#platform-saved-login-account':null};
 })()"""
 
-SELECT_JS = r"""(()=>{const code=__CODE__,labels=__LABELS__,names=new Set(labels.map(l=>l.toLowerCase()));
-try{for(const loc of [document.documentElement.lang,...(navigator.languages||[]),'zh-CN','zh-TW','en','ja','de','fr','it','es']){
+SELECT_JS = r"""(()=>{
+const code=__CODE__,labels=__LABELS__;
+const names=new Set(labels.map(l=>l.toLowerCase()));
+try{for(const loc of [document.documentElement.lang,...(navigator.languages||[]),'zh-CN','zh-TW','en','ja','de']){
  if(!loc)continue;const d=new Intl.DisplayNames([loc],{type:'region'});const v=d.of(code);if(v)names.add(v.trim().toLowerCase());}}catch(e){}
-const rows=Array.from(document.querySelectorAll('button.full-page-account-switcher-account-details')).filter(r=>r.getClientRects().length);
-const hit=rows.find(r=>{const t=(r.innerText||'').replace(/\s+/g,' ').trim().toLowerCase();
- return Array.from(names).some(n=>t===n||t.startsWith(n+' '));});
-if(!hit)return JSON.stringify({clicked:false,rows:rows.map(r=>(r.innerText||'').replace(/\s+/g,' ').trim().slice(0,40))});
+const norm=s=>(s||'').replace(/\s+/g,' ').trim().toLowerCase();
+const visible=e=>e.getClientRects().length>0;
+const nodes=Array.from(document.querySelectorAll('button,a,li,div,span,kat-option,[role="button"],[role="option"]'));
+const hits=nodes.filter(e=>{if(!visible(e))return false;const t=norm(e.innerText);
+ if(!t||t.length>30)return false;if(e.children.length>3)return false;
+ return Array.from(names).some(n=>t===n||t.startsWith(n+' ')||t.startsWith(n+'(')||t.startsWith(n+'（'));});
+const candidates=nodes.filter(e=>visible(e)&&e.children.length===0&&/[\u4e00-\u9fa5A-Za-z]/.test(e.innerText||''))
+ .slice(0,40).map(e=>norm(e.innerText).slice(0,24));
+if(!hits.length){
+ const box=Array.from(document.querySelectorAll('*')).find(e=>{if(!visible(e))return false;
+  const st=getComputedStyle(e);return (st.overflowY==='auto'||st.overflowY==='scroll')&&e.scrollHeight>e.clientHeight+40;});
+ if(box&&box.scrollTop+box.clientHeight<box.scrollHeight-10){box.scrollTop+=box.clientHeight*0.8;
+  return JSON.stringify({clicked:false,scrolled:true,rows:candidates});}
+ return JSON.stringify({clicked:false,rows:candidates});
+}
+const hit=hits[hits.length-1];
+try{hit.scrollIntoView({block:'center'});}catch(e){}
 for(const type of ['pointerover','pointerdown','mousedown','pointerup','mouseup','click']){
  hit.dispatchEvent(new MouseEvent(type,{bubbles:true,cancelable:true,composed:true,view:window}));}
-return JSON.stringify({clicked:true,text:(hit.innerText||'').replace(/\s+/g,' ').trim().slice(0,80)});})()"""
+return JSON.stringify({clicked:true,text:norm(hit.innerText).slice(0,60)});})()"""
 
 ENGLISH = {"US": "United States", "CA": "Canada", "MX": "Mexico", "UK": "United Kingdom",           "DE": "Germany", "FR": "France", "IT": "Italy", "ES": "Spain", "NL": "Netherlands",
            "SE": "Sweden", "PL": "Poland", "BE": "Belgium", "TR": "Turkey", "BR": "Brazil",
@@ -215,6 +230,7 @@ async def switch_market(ctx, shop, code, timeout):
     deadline = asyncio.get_running_loop().time() + timeout
     clicked = None
     expanded = 0
+    candidates = []
     while asyncio.get_running_loop().time() < deadline:
         state = await read(ctx, shop)
         if state.get("accountCard") and expanded < 3:
@@ -227,26 +243,21 @@ async def switch_market(ctx, shop, code, timeout):
                                                                 ensure_ascii=False))
         result = await ctx.tool("browser.evaluate", shop=shop, expression=expression)
         data = json.loads(result) if isinstance(result, str) else {}
+        candidates = data.get("rows") or candidates
         if data.get("clicked"):
             clicked = data.get("text")
             break
         await ctx.sleep(2)
     if not clicked:
-        raise RuntimeError(f"账号切换器里没有找到 {CHINESE.get(code, code)} 的站点行")
+        raise RuntimeError(f"账号切换器里没有找到 {CHINESE.get(code, code)} 的站点行；"
+                           f"页面候选：{candidates[:12]}")
+    await ctx.sleep(1)
+    await _click_text(ctx, shop, ["選取帳戶", "选取账户", "Select account", "Continue", "继续"])
     deadline = asyncio.get_running_loop().time() + timeout
     while asyncio.get_running_loop().time() < deadline:
         await ctx.sleep(2)
         state = await read(ctx, shop)
         if state.get("gate") == "LOGGED_IN" and code_for_country(state.get("countryText")) == code:
-            return {"ok": True, "countryText": state.get("countryText"), "clicked": clicked}
-    raise RuntimeError(f"点了 {CHINESE.get(code, code)} 的站点行，但页面头部国家没有变成目标站点")
-    if not clicked:
-        raise RuntimeError(f"账号切换器里没有找到 {CHINESE.get(code, code)} 的站点行")
-    deadline = asyncio.get_running_loop().time() + timeout
-    while asyncio.get_running_loop().time() < deadline:
-        await ctx.sleep(2)
-        state = await read(ctx, shop)
-        if code_for_country(state.get("countryText")) == code:
             return {"ok": True, "countryText": state.get("countryText"), "clicked": clicked}
     raise RuntimeError(f"点了 {CHINESE.get(code, code)} 的站点行，但页面头部国家没有变成目标站点")
 
@@ -260,10 +271,7 @@ async def prepare(ctx, shop, marketplace_id, timeout):
     await ctx.tool("browser.goto", shop=shop, url=f"https://{host}/")
     state = await wait_login(ctx, shop, timeout)
     if "/account-switcher" in str(state.get("loginHref") or ""):
-        try:
-            await switch_market(ctx, shop, code, timeout)
-        except RuntimeError:
-            return state, code
+        await switch_market(ctx, shop, code, timeout)
         state = await wait_login(ctx, shop, timeout)
     elif state.get("gate") == "LOGGED_IN" and code_for_country(state.get("countryText")) != code:
         await switch_market(ctx, shop, code, timeout)
