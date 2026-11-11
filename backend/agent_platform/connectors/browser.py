@@ -39,3 +39,7 @@ class Browser:
     async def find_windows(self, shop_id: str) -> list[str]:
         """返回该店铺当前可回收的窗口引用列表。"""
         raise NotImplementedError
+
+    async def debug_port(self, shop_id: str) -> int | None:
+        """窗口的页面调试端口；连接方式不提供时返回 None。"""
+        return None

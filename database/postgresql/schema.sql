@@ -169,3 +169,25 @@ CREATE INDEX IF NOT EXISTS runtime_log_execution_time ON runtime_log(execution_i
 CREATE INDEX IF NOT EXISTS system_log_execution_time ON system_log(execution_id, occurred_at, id);
 
 CREATE INDEX IF NOT EXISTS tool_call_log_execution_time ON tool_call_log(execution_id, occurred_at, id);
+
+CREATE TABLE IF NOT EXISTS feedback_case (
+    id BIGSERIAL PRIMARY KEY,
+    sid TEXT NOT NULL,
+    store_name TEXT NOT NULL DEFAULT '',
+    marketplace_id TEXT NOT NULL,
+    order_id TEXT NOT NULL,
+    feedback_date TEXT NOT NULL,
+    rating INTEGER NOT NULL,
+    comment TEXT NOT NULL,
+    external_id TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'NEW',
+    reason TEXT NOT NULL DEFAULT '',
+    evidence TEXT NOT NULL DEFAULT '',
+    case_ref TEXT NOT NULL DEFAULT '',
+    created_at DOUBLE PRECISION NOT NULL,
+    updated_at DOUBLE PRECISION NOT NULL,
+    checked_at DOUBLE PRECISION,
+    UNIQUE(sid, marketplace_id, order_id)
+);
+
+CREATE INDEX IF NOT EXISTS feedback_case_status ON feedback_case(status, updated_at);

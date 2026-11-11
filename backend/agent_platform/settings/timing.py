@@ -18,6 +18,7 @@ DEFAULTS = {
     "codex_timeout_seconds": 600,
     "erp_timeout_seconds": 30,
     "integration_timeout_seconds": 30,
+    "browser_timeout_seconds": 30,
     "api_action_timeout_seconds": 60,
 }
 RANGES = {
@@ -29,6 +30,7 @@ RANGES = {
     "codex_timeout_seconds": (1, 86400),
     "erp_timeout_seconds": (1, 600),
     "integration_timeout_seconds": (1, 600),
+    "browser_timeout_seconds": (1, 600),
 }
 
 

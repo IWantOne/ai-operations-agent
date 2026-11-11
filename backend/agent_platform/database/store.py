@@ -15,7 +15,7 @@ import time
 from typing import Any, Iterator, Sequence
 
 LOG_TABLES = frozenset({"system_log", "execution_log", "runtime_log", "tool_call_log", "resource_log"})
-TABLES = LOG_TABLES | {"task_info", "work_request", "work_attempt", "retry_budget", "control_command", "execution_info", "resource_info", "resource_lease"}
+TABLES = LOG_TABLES | {"task_info", "work_request", "work_attempt", "retry_budget", "control_command", "execution_info", "resource_info", "resource_lease", "feedback_case"}
 
 
 class Store:

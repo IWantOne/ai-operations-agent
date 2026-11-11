@@ -3,7 +3,7 @@ MODULES = {"system": "工作台系统", "execution": "任务执行", "runtime": 
            "tools": "工具调用", "resources": "窗口管理", "ziniao": "紫鸟连接"}
 EVENT_TYPES = {"system": "系统运行", "settings": "配置变更", "task": "任务执行与控制",
                "schedule": "任务调度", "window": "窗口借还", "connection": "接口通信",
-               "script": "脚本运行", "tool": "工具调用", "custom": "未登记事件"}
+               "script": "脚本运行", "tool": "工具调用", "feedback": "差评处理", "custom": "未登记事件"}
 PROVIDERS = {"ziniao": "紫鸟"}
 LEVELS = {"DEBUG": "调试", "INFO": "信息", "WARNING": "警告", "ERROR": "错误", "CRITICAL": "严重错误"}
 SOURCE_MODULES = {"system_log": "system", "execution_log": "execution", "runtime_log": "runtime",
@@ -25,6 +25,9 @@ GROUPS = [
     ("execution_log", "execution", "task", "", {
         "started": "开始执行", "execution_error": "执行异常", "cleanup_incomplete": "执行后的资源清理未完成",
         "task_enabled": "启用任务", "task_disabled": "停用任务", "window_wait": "执行申请店铺窗口"}),
+    ("execution_log", "execution", "feedback", "", {
+        "feedback_synced": "差评同步完成", "feedback_sync_failed": "差评同步失败",
+        "feedback_sync_skipped": "差评同步跳过"}),
     ("resource_log", "resources", "window", "", {
         "RECONCILED": "窗口核验完成", "INSPECT_FAILED": "窗口核验失败", "ACQUIRED": "获得窗口",
         "OPEN_REJECTED": "开窗被拒且核验未打开", "OPEN_FAILED": "打开窗口失败", "OWNERSHIP_CONFLICT": "窗口归属冲突",

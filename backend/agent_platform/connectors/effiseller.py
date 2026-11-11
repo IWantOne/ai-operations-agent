@@ -35,6 +35,10 @@ class EffisellerClient:
     def stores(self):
         return self._call("GET", "/api/open/amazon/stores")
 
+    def api(self, method, path, body=None):
+        """直连 ERP 自有接口（/api/open/erp/...），不走 Amazon 透传。"""
+        return self._call(method, path, body)
+
     def request(self, *, sid=None, store_name=None, api_type="sp-api", method="GET", path="/",
                 query=None, headers=None, body=None, ads_scope=None):
         if (sid is None) == (not store_name):

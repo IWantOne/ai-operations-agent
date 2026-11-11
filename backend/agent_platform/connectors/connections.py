@@ -200,6 +200,26 @@ class WebDriverBrowser(Browser):
             raise ConnectorError(f"店铺 {shop_id} 窗口查询失败，远端结果不明：{exc}") from exc
         return [shop_id] if running else []
 
+    async def debug_port(self, shop_id):
+        self._require_shop(shop_id)
+        try:
+            result = await self._observe("getRunningInfo")
+        except Exception as exc:
+            raise ConnectorError(f"读取店铺 {shop_id} 调试端口失败，远端结果不明：{exc}") from exc
+        rows = result.get("browsers")
+        if not isinstance(rows, list):
+            raise ConnectorError(f"getRunningInfo 缺少 browsers 数组：{result!r}")
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            keys = (row.get("browserId"), row.get("browserOauth"))
+            if any(str(key) == str(shop_id) for key in keys if key not in (None, "")):
+                port = row.get("debuggingPort")
+                if not port:
+                    raise ConnectorError(f"店铺 {shop_id} 的窗口在运行，但没有返回调试端口")
+                return int(port)
+        raise ConnectorError(f"店铺 {shop_id} 没有运行中的窗口，请先打开窗口再操作页面")
+
 
 class Connections:
     def __init__(self, store, stores, path):

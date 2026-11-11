@@ -1,0 +1,19 @@
+{
+  "employee": {
+    "key": "feedback",
+    "name": "差评员工",
+    "description": "同步并处理亚马逊 1–3 星卖家反馈"
+  },
+  "tasks": [
+    {
+      "name": "差评同步",
+      "task_key": "feedback.sync",
+      "handler": "feedback.sync",
+      "input": {},
+      "timeout_seconds": 300,
+      "schedules": [
+        {"key": "每 30 分钟", "interval_seconds": 1800}
+      ]
+    }
+  ]
+}
