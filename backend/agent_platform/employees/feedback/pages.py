@@ -56,6 +56,45 @@ const r=toggle.getBoundingClientRect();
 return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2),
  onScreen:r.top>=0&&r.bottom<=innerHeight};})()"""
 
+MENU_ACTION_JS = r"""(()=>{const order=__ORDER__,want=__ACTION__;
+const rows=[...document.querySelectorAll('kat-table-row')].filter(r=>
+ [...r.querySelectorAll('kat-link')].some(a=>a.getAttribute('label')===order));
+const row=rows[0];
+if(!row)return {error:'ROW_NOT_FOUND'};
+const dd=row.querySelector('kat-dropdown-button');
+if(!dd||!dd.shadowRoot)return {error:'DROPDOWN_NOT_FOUND'};
+const opt=dd.shadowRoot.querySelector('button.option[data-action="'+want+'"]');
+if(!opt)return {error:'OPTION_NOT_FOUND'};
+const r=opt.getBoundingClientRect();
+if(!r.width||!r.height)return {error:'OPTION_NOT_VISIBLE'};
+return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2),
+ text:(opt.innerText||'').trim()};})()"""
+
+# 审核入口会请求 /fbmapi/v1/feedbacks/<id>/removal；被拒绝时页面不会打开表单，
+# 只有从 Performance 记录里能读到真实 HTTP 状态。
+REMOVAL_ENTRY_JS = r"""(()=>{const start=__START__;
+const r=performance.getEntriesByType('resource').filter(e=>e.startTime>=start)
+ .filter(e=>/\/fbmapi\/v1\/feedbacks\/[^/]+\/removal/.test(new URL(e.name).pathname)).at(-1);
+return r?{status:r.responseStatus||0,path:new URL(r.name).pathname}:null;})()"""
+
+# 按可见文字找可点控件并返回坐标：紫鸟窗口里的组件多数只认真实鼠标事件。
+CLICKABLE_JS = r"""(()=>{const labels=__LABELS__.map(l=>l.toLowerCase());
+const n=s=>(s||'').replace(/\s+/g,' ').trim().toLowerCase();
+const out=[];const walk=root=>{for(const e of root.querySelectorAll('*')){
+ const tag=e.tagName,role=e.getAttribute&&e.getAttribute('role');
+ const label=((e.getAttribute&&(e.getAttribute('label')||e.getAttribute('aria-label')))||'');
+ const text=(e.innerText||'').trim();
+ const clickable=/^(BUTTON|A|KAT-BUTTON|INPUT)$/.test(tag)
+  ||['button','menuitem','radio','option','link'].includes(role);
+ if(!clickable||e.disabled||e.hasAttribute('disabled'))continue;
+ const hay=n(label+' '+text);
+ if(!labels.some(l=>hay===l||hay.startsWith(l)))continue;
+ const r=e.getBoundingClientRect();
+ if(r.width&&r.height)out.push({x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2),
+  text:text.slice(0,40),tag});
+ if(e.shadowRoot)walk(e.shadowRoot);}};walk(document);return out.slice(0,5);})()"""
+
+
 NEXT_PAGE = r"""(()=>{
 const labels=['next page','next','下一页','下一頁','次へ'];
 const walk=root=>{const out=[];const visit=r=>{for(const e of r.querySelectorAll('*')){
@@ -138,6 +177,38 @@ async def open_menu(ctx, shop, order_id):
     await ctx.sleep(1)
     return await ctx.tool("browser.evaluate", shop=shop,
                           expression=MENU_READ.replace("__ORDER__", json.dumps(order_id)))
+
+
+async def menu_action_point(ctx, shop, order_id, action):
+    """操作菜单里某个 data-action 选项的点击坐标；菜单必须先展开。"""
+    point = await ctx.tool("browser.evaluate", shop=shop,
+                           expression=MENU_ACTION_JS.replace("__ORDER__", json.dumps(order_id))
+                           .replace("__ACTION__", json.dumps(action)))
+    return point if isinstance(point, dict) else {}
+
+
+async def removal_entry(ctx, shop, started, attempts=10):
+    """审核入口请求的真实 HTTP 状态；没观察到请求时返回 None。"""
+    for _ in range(attempts):
+        entry = await ctx.tool("browser.evaluate", shop=shop,
+                               expression=REMOVAL_ENTRY_JS.replace("__START__", json.dumps(started)))
+        if entry:
+            return entry
+        await ctx.sleep(0.5)
+    return None
+
+
+async def click_text(ctx, shop, labels):
+    """按可见文字找可点控件并真实点击；返回 {clicked, text} 或 {clicked: False}。"""
+    points = await ctx.tool("browser.evaluate", shop=shop,
+                            expression=CLICKABLE_JS.replace(
+                                "__LABELS__", json.dumps([label.lower() for label in labels],
+                                                         ensure_ascii=False)))
+    if not isinstance(points, list) or not points:
+        return {"clicked": False}
+    point = points[0]
+    await ctx.tool("browser.click_point", shop=shop, x=point["x"], y=point["y"])
+    return {"clicked": True, "text": point.get("text", ""), "tag": point.get("tag", "")}
 
 
 async def screenshot(ctx, shop, label):
