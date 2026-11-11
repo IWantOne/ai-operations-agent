@@ -25,16 +25,36 @@ return {url:location.href,title:document.title,ready:document.readyState,
    disabled:!!(e.disabled||e.hasAttribute('disabled'))}))}))};
 })()"""
 
-MENU_READ = r"""(()=>{const out=[];const walk=root=>{
-for(const e of root.querySelectorAll('*')){
- const text=(e.innerText||'').trim();
- const role=e.getAttribute&&e.getAttribute('role');
- const tag=e.tagName;
- if((tag==='KAT-DROPDOWN-MENU-ITEM'||tag==='KAT-ACTION-MENU-ITEM'||role==='menuitem'||tag==='KAT-OPTION')&&text&&text.length<80){
-   out.push({tag,text,role:role||'',disabled:!!(e.disabled||e.hasAttribute('disabled'))});
- }
- if(e.shadowRoot)walk(e.shadowRoot);
-}};walk(document);return {url:location.href,title:document.title,text:(document.body?document.body.innerText:'').slice(0,4000),items:out.slice(0,20)};})()"""
+# 操作菜单是 kat-dropdown-button：展开开关在 shadow root 里，只认真实鼠标点击；
+# 菜单项带稳定的 data-action（request_removal 等），比按语言匹配文字可靠。
+MENU_READ = r"""(()=>{const order=__ORDER__;
+const rows=[...document.querySelectorAll('kat-table-row')].filter(r=>
+ [...r.querySelectorAll('kat-link')].some(a=>a.getAttribute('label')===order));
+const row=rows[0];
+const dd=row&&row.querySelector('kat-dropdown-button');
+const vis=e=>{const b=e.getBoundingClientRect();const s=getComputedStyle(e);
+ return b.width>0&&b.height>0&&s.visibility!=='hidden'&&s.display!=='none';};
+const options=dd&&dd.shadowRoot?[...dd.shadowRoot.querySelectorAll('button.option')]:[];
+const toggle=dd&&dd.shadowRoot?dd.shadowRoot.querySelector('button.indicator'):null;
+return {url:location.href,title:document.title,
+ expanded:toggle?toggle.getAttribute('aria-expanded'):null,
+ items:options.map(e=>({action:e.getAttribute('data-action'),text:(e.innerText||'').trim(),
+  visible:vis(e),disabled:!!(e.disabled||e.hasAttribute('disabled'))})),
+ text:(document.body?document.body.innerText:'').slice(0,4000)};})()"""
+
+MENU_TOGGLE_JS = r"""(()=>{const order=__ORDER__;
+const rows=[...document.querySelectorAll('kat-table-row')].filter(r=>
+ [...r.querySelectorAll('kat-link')].some(a=>a.getAttribute('label')===order));
+const row=rows[0];
+if(!row)return {error:'ROW_NOT_FOUND'};
+const dd=row.querySelector('kat-dropdown-button');
+if(!dd||!dd.shadowRoot)return {error:'DROPDOWN_NOT_FOUND'};
+const toggle=dd.shadowRoot.querySelector('button.indicator');
+if(!toggle)return {error:'TOGGLE_NOT_FOUND'};
+dd.scrollIntoView({block:'center'});
+const r=toggle.getBoundingClientRect();
+return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2),
+ onScreen:r.top>=0&&r.bottom<=innerHeight};})()"""
 
 NEXT_PAGE = r"""(()=>{
 const labels=['next page','next','下一页','下一頁','次へ'];
@@ -63,6 +83,12 @@ def page_kind(state):
     if "feedback-manager" in url:
         return "feedback"
     return "other"
+
+
+def requests_review(menu):
+    """菜单里是否有可点的“请求审核”（按稳定的 data-action 判断，不看语言）。"""
+    return any(item.get("action") == "request_removal" and item.get("visible")
+               for item in (menu or {}).get("items", []))
 
 
 async def open(ctx, shop, marketplace_id):
@@ -100,10 +126,18 @@ async def find_order(ctx, shop, order_id, max_pages=5):
 
 
 async def open_menu(ctx, shop, order_id):
-    selector = f"kat-table-row:has(kat-link[label='{order_id}']) kat-dropdown-button"
-    await ctx.tool("browser.click", shop=shop, selector=selector)
+    """展开订单行的操作菜单；展开开关只认真实鼠标点击。"""
+    point = await ctx.tool("browser.evaluate", shop=shop,
+                           expression=MENU_TOGGLE_JS.replace("__ORDER__", json.dumps(order_id)))
+    if not isinstance(point, dict) or point.get("x") is None:
+        raise RuntimeError(f"订单 {order_id} 的操作菜单没有找到："
+                           f"{(point or {}).get('error', '未知原因')}")
+    if not point.get("onScreen"):
+        raise RuntimeError(f"订单 {order_id} 的操作菜单不在可视区域内")
+    await ctx.tool("browser.click_point", shop=shop, x=point["x"], y=point["y"])
     await ctx.sleep(1)
-    return await ctx.tool("browser.evaluate", shop=shop, expression=MENU_READ)
+    return await ctx.tool("browser.evaluate", shop=shop,
+                          expression=MENU_READ.replace("__ORDER__", json.dumps(order_id)))
 
 
 async def screenshot(ctx, shop, label):

@@ -263,6 +263,28 @@ class WebDriverBrowser(Browser):
                 return int(port)
         raise ConnectorError(f"店铺 {shop_id} 没有运行中的窗口，请先打开窗口再操作页面")
 
+    async def launcher(self, shop_id):
+        """店铺窗口的启动页：紫鸟给该店铺配置的首页，是唯一可靠的已登录入口。"""
+        await self._oauth_for(shop_id)
+        targets = {str(shop_id)}
+        oauth = self.oauth.get(str(shop_id))
+        if oauth:
+            targets.add(oauth)
+        try:
+            result = await self._observe("getRunningInfo")
+        except Exception as exc:
+            raise ConnectorError(f"读取店铺 {shop_id} 启动页失败，远端结果不明：{exc}") from exc
+        rows = result.get("browsers")
+        if not isinstance(rows, list):
+            raise ConnectorError(f"getRunningInfo 缺少 browsers 数组：{result!r}")
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            keys = (row.get("browserId"), row.get("browserOauth"))
+            if any(str(key) in targets for key in keys if key not in (None, "")):
+                return str(row.get("launcherPage") or "") or None
+        return None
+
 
 class Connections:
     def __init__(self, store, stores, path):

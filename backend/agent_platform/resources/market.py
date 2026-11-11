@@ -41,17 +41,6 @@ MARKET_CODES = {
 CODE_HOSTS = {code: MARKETS[mid] for mid, code in MARKET_CODES.items()}
 CODE_IDS = {code: mid for mid, code in MARKET_CODES.items()}
 
-CONFIRM_JS = r"""(()=>{const want=/选择账户|選取帳戶|select account/i;
-let found=false;
-const walk=root=>{for(const e of root.querySelectorAll('*')){
- if(found)return;
- if(!e.getClientRects||!e.getClientRects().length)continue;
- const label=(e.getAttribute&&(e.getAttribute('label')||e.getAttribute('aria-label')))||'';
- const text=(e.innerText||'').trim();
- if(want.test(label+' '+text)){e.id='dsh-market-confirm';found=true;return;}
- if(e.shadowRoot)walk(e.shadowRoot);}};walk(document);
-return found;})()"""
-
 # 页面头部国家标签 → 站点代码；中英文都认。
 NAME_CODES = {
     "美国": "US", "united states": "US", "加拿大": "CA", "canada": "CA",
@@ -119,32 +108,6 @@ return {gate,blockedBy:blocked,ready:document.readyState,host:location.host,
  deviceButton:form.device?'#auth-select-device-form input[type="submit"], #auth-select-device-form button':null,
  savedAccount:groups.length===1&&groups[0]&&(groups[0].id='platform-saved-login-account')?'#platform-saved-login-account':null};
 })()"""
-
-SELECT_JS = r"""(()=>{
-const code=__CODE__,labels=__LABELS__;
-const names=new Set(labels.map(l=>l.toLowerCase()));
-try{for(const loc of [document.documentElement.lang,...(navigator.languages||[]),'zh-CN','zh-TW','en','ja','de']){
- if(!loc)continue;const d=new Intl.DisplayNames([loc],{type:'region'});const v=d.of(code);if(v)names.add(v.trim().toLowerCase());}}catch(e){}
-const norm=s=>(s||'').replace(/\s+/g,' ').trim().toLowerCase();
-const visible=e=>e.getClientRects().length>0;
-const nodes=Array.from(document.querySelectorAll('button,a,li,div,span,kat-option,[role="button"],[role="option"]'));
-const hits=nodes.filter(e=>{if(!visible(e))return false;const t=norm(e.innerText);
- if(!t||t.length>30)return false;if(e.children.length>3)return false;
- return Array.from(names).some(n=>t===n||t.startsWith(n+' ')||t.startsWith(n+'(')||t.startsWith(n+'（'));});
-const candidates=nodes.filter(e=>visible(e)&&e.children.length===0&&/[\u4e00-\u9fa5A-Za-z]/.test(e.innerText||''))
- .slice(0,40).map(e=>norm(e.innerText).slice(0,24));
-if(!hits.length){
- const box=Array.from(document.querySelectorAll('*')).find(e=>{if(!visible(e))return false;
-  const st=getComputedStyle(e);return (st.overflowY==='auto'||st.overflowY==='scroll')&&e.scrollHeight>e.clientHeight+40;});
- if(box&&box.scrollTop+box.clientHeight<box.scrollHeight-10){box.scrollTop+=box.clientHeight*0.8;
-  return JSON.stringify({clicked:false,scrolled:true,rows:candidates});}
- return JSON.stringify({clicked:false,rows:candidates});
-}
-const hit=hits[hits.length-1];
-try{hit.scrollIntoView({block:'center'});}catch(e){}
-const button=hit.closest('button')||hit;
-button.id='dsh-market-row';
-return JSON.stringify({clicked:true,text:norm(hit.innerText).slice(0,60)});})()"""
 
 ENGLISH = {"US": "United States", "CA": "Canada", "MX": "Mexico", "UK": "United Kingdom",           "DE": "Germany", "FR": "France", "IT": "Italy", "ES": "Spain", "NL": "Netherlands",
            "SE": "Sweden", "PL": "Poland", "BE": "Belgium", "TR": "Turkey", "BR": "Brazil",
@@ -233,29 +196,61 @@ async def wait_login(ctx, shop, timeout):
 SWITCHER_PATH = "/account-switcher/default/merchantMarketplace?returnTo=%2Famazonsell%2Fbusiness"
 
 
+ROW_RECT_JS = r"""(()=>{const code=__CODE__,labels=__LABELS__;const n=s=>(s||'').replace(/\s+/g,' ').trim().toLowerCase();
+const names=new Set(labels.map(l=>l.toLowerCase()));
+try{for(const loc of [document.documentElement.lang,...(navigator.languages||[]),'zh-CN','zh-TW','en','ja','de']){
+ if(!loc)continue;const d=new Intl.DisplayNames([loc],{type:'region'});const v=d.of(code);if(v)names.add(v.trim().toLowerCase());}}catch(e){}
+const rows=[...document.querySelectorAll('button.full-page-account-switcher-account-details')];
+const hits=rows.filter(r=>{const t=n(r.innerText);
+ return t&&[...names].some(x=>t===x||t.startsWith(x+' '));});
+if(hits.length!==1)return JSON.stringify({found:false,hits:hits.length,
+ rows:rows.slice(0,40).map(r=>n(r.innerText).slice(0,24))});
+const b=hits[0];b.scrollIntoView({block:'center'});
+const r=b.getBoundingClientRect();
+const x=Math.round(r.x+r.width/2),y=Math.round(r.y+r.height/2);
+const top=document.elementFromPoint(x,y);
+return JSON.stringify({found:true,selected:/account-selected/.test(String(b.className)),
+ x,y,inside:!!(top&&b.contains(top))});})()"""
+
+# 确认控件是 kat-button，真正的按钮在它的 shadow root 里：坐标点击打不中，
+# 只有对 shadow 里的 button 派发 click 才会走页面的切换逻辑。
+CONFIRM_BUTTON_JS = r"""(()=>{const want=/^(选择账户|選取帳戶|select account)$/i;
+const all=[...document.querySelectorAll('kat-button,kat-action-button')];
+const host=all.find(e=>e.getAttribute('data-test')==='confirm-selection')||all.filter(e=>{
+ const label=((e.getAttribute('label')||e.getAttribute('aria-label'))||'').trim();
+ return want.test(label);}).pop();
+if(!host)return JSON.stringify({found:false});
+const inner=host.shadowRoot?host.shadowRoot.querySelector('button'):host;
+if(!inner)return JSON.stringify({found:false,reason:'NO_INNER'});
+if(inner.disabled||host.hasAttribute('disabled'))return JSON.stringify({found:false,reason:'DISABLED'});
+host.scrollIntoView({block:'center'});
+inner.click();
+return JSON.stringify({clicked:true,label:(host.getAttribute('label')||'').trim()});})()"""
+
+
 async def switch_market(ctx, shop, code, timeout):
-    """在店铺当前域名打开账号切换器，展开账号卡片，点目标站点行，再等登录后的头部国家确认。"""
-    host = str((await read(ctx, shop)).get("host") or "")
+    """在店铺当前域名打开账号切换器，选中目标站点行，点底部确认，再回读落地站点。"""
+    label = CHINESE.get(code, code)
+    state = await read(ctx, shop)
+    host = str(state.get("host") or "")
     if not host.startswith("sellercentral."):
         raise RuntimeError(f"当前页面不是 Seller Central（{host or '未知域名'}），无法切换站点")
+    if state.get("gate") == "LOGGED_IN" and code_for_country(state.get("countryText")) == code:
+        return {"ok": True, "already": True, "countryText": state.get("countryText")}
     await ctx.tool("browser.goto", shop=shop, url=f"https://{host}{SWITCHER_PATH}")
-    await ctx.sleep(4)
+    await ctx.sleep(6)
     deadline = asyncio.get_running_loop().time() + timeout
-    clicked = None
+    row = None
     expanded = 0
-    candidates = []
     while asyncio.get_running_loop().time() < deadline:
-        expression = SELECT_JS.replace("__CODE__", json.dumps(code)) \
-                              .replace("__LABELS__", json.dumps([CHINESE.get(code, ""), ENGLISH.get(code, "")],
-                                                                ensure_ascii=False))
-        result = await ctx.tool("browser.evaluate", shop=shop, expression=expression)
-        data = json.loads(result) if isinstance(result, str) else {}
-        candidates = data.get("rows") or candidates
-        if data.get("clicked"):
-            await ctx.tool("browser.real_click", shop=shop, selector="#dsh-market-row")
-            clicked = data.get("text")
+        result = await ctx.tool("browser.evaluate", shop=shop,
+                                expression=ROW_RECT_JS.replace("__CODE__", json.dumps(code))
+                                .replace("__LABELS__", json.dumps([CHINESE.get(code, ""), ENGLISH.get(code, "")],
+                                                                  ensure_ascii=False)))
+        point = json.loads(result) if isinstance(result, str) else {}
+        if point.get("found"):
+            row = point
             break
-        # 列表通常自己展开；等不到时才点一次账号卡片。
         if expanded < 1:
             expanded += 1
             state = await read(ctx, shop)
@@ -264,41 +259,60 @@ async def switch_market(ctx, shop, code, timeout):
                 await ctx.sleep(3)
                 continue
         await ctx.sleep(2)
-    if not clicked:
-        raise RuntimeError(f"账号切换器里没有找到 {CHINESE.get(code, code)} 的站点行；"
-                           f"页面候选：{candidates[:12]}")
-    confirmed = False
+    if not row:
+        raise RuntimeError(f"账号切换器里没有找到 {label} 的站点行（列表可能还没展开）")
+    # 目标站点已经是当前站点时，再点一次行会取消选中，确认按钮就点不动了。
+    if not row.get("selected"):
+        if not row.get("inside"):
+            raise RuntimeError(f"找到 {label} 的站点行，但点击位置被其它元素挡住")
+        await ctx.tool("browser.click_point", shop=shop, x=row["x"], y=row["y"])
+        await ctx.sleep(1)
+    confirm = None
     for _ in range(10):
-        confirmed = await ctx.tool("browser.evaluate", shop=shop, expression=CONFIRM_JS)
-        if confirmed:
+        result = await ctx.tool("browser.evaluate", shop=shop, expression=CONFIRM_BUTTON_JS)
+        point = json.loads(result) if isinstance(result, str) else {}
+        if point.get("clicked"):
+            confirm = point
             break
         await ctx.sleep(1)
-    if confirmed:
-        await ctx.tool("browser.real_click", shop=shop, selector="#dsh-market-confirm")
+    if not confirm:
+        raise RuntimeError(f"选中了 {label}，但页面上没有可点的「选择账户」按钮")
     deadline = asyncio.get_running_loop().time() + timeout
     market_id = CODE_IDS.get(code, "")
     while asyncio.get_running_loop().time() < deadline:
         await ctx.sleep(2)
         state = await read(ctx, shop)
         if market_id and market_id in str(state.get("loginHref") or ""):
-            return {"ok": True, "url": state.get("loginHref"), "clicked": clicked}
+            return {"ok": True, "url": state.get("loginHref")}
         if state.get("gate") == "LOGGED_IN" and code_for_country(state.get("countryText")) == code:
-            return {"ok": True, "countryText": state.get("countryText"), "clicked": clicked}
-    raise RuntimeError(f"点了 {CHINESE.get(code, code)} 的站点行，但页面没有切过去")
+            return {"ok": True, "countryText": state.get("countryText")}
+    raise RuntimeError(f"点了 {label} 的站点行和选择账户，但页面没有切过去")
+
+
+async def _home_url(ctx, shop):
+    """店铺窗口的启动页（紫鸟给店铺配置的首页）；连接方式不提供时返回 None。"""
+    try:
+        value = await ctx.tool("browser.home", shop=shop)
+    except Exception:
+        return None
+    return str(value) if value else None
 
 
 async def prepare(ctx, shop, marketplace_id, timeout):
-    """打开目标站点首页，等登录/选取账户，确认站点；返回 (页面状态, 站点代码)。"""
+    """从店铺已登录的首页进入，需要时切到目标站点；返回 (页面状态, 站点代码)。"""
     code = MARKET_CODES.get(str(marketplace_id))
     host = CODE_HOSTS.get(code)
-    if not host:
+    if not code or not host:
         raise ValueError(f"站点 {marketplace_id} 没有对应的 Seller Central 地址")
-    await ctx.tool("browser.goto", shop=shop, url=f"https://{host}/")
+    # 直接打开目标站点时，未登录的站点只会给一张营销页；先从店铺自己的首页进，
+    # 那里才有可用的登录态和账号切换器。
+    start = await _home_url(ctx, shop) or f"https://{host}/"
+    await ctx.tool("browser.goto", shop=shop, url=start)
     state = await wait_login(ctx, shop, timeout)
-    if "/account-switcher" in str(state.get("loginHref") or ""):
-        await switch_market(ctx, shop, code, timeout)
-        state = await wait_login(ctx, shop, timeout)
-    elif state.get("gate") == "LOGGED_IN" and code_for_country(state.get("countryText")) != code:
-        await switch_market(ctx, shop, code, timeout)
-        state = await read(ctx, shop)
+    if state.get("gate") in {"BLOCKED", "CAPTCHA"}:
+        return state, code
+    if state.get("gate") == "LOGGED_IN" and code_for_country(state.get("countryText")) == code:
+        return state, code
+    await switch_market(ctx, shop, code, timeout)
+    state = await wait_login(ctx, shop, timeout)
     return state, code

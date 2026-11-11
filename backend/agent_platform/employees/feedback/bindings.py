@@ -7,9 +7,6 @@ from ...resources.market import host_for
 ROOT = Path(__file__).resolve().parents[4]
 BINDINGS = ROOT / "deploy" / "store-bindings.json"
 
-REQUEST_LABELS = ("request review", "request removal", "请求审核", "要求审核",
-                  "申请审核", "申請審査", "レビューの削除をリクエスト")
-
 
 def load_bindings():
     if not BINDINGS.is_file():

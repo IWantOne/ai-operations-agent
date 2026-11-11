@@ -6,7 +6,7 @@
 import json
 import time
 
-from .bindings import REQUEST_LABELS, load_bindings, url_for
+from .bindings import load_bindings, url_for
 from .cases import judge
 from . import apply, pages
 from ...resources import market
@@ -112,14 +112,13 @@ def register(manager):
                         menu = await pages.open_menu(ctx, shop, case["order_id"])
                         evidence.update(menu=menu.get("items", []),
                                         page_text=(menu.get("text") or "")[:2000])
-                        labels = [str(item.get("text", "")).lower() for item in evidence["menu"]]
-                        if any(any(label in text for label in REQUEST_LABELS) for text in labels):
+                        if pages.requests_review(menu):
                             result, reason, extra = await apply.run(ctx, shop, case["order_id"])
                             evidence.update(extra)
                             mark(case, result, reason, evidence)
                             counts[{"SUBMITTED": "submitted", "MANUAL": "manual"}.get(result, "kept")] += 1
                         else:
-                            mark(case, "NEW", "菜单里没有识别到“请求审核”，页面文本已记录", evidence)
+                            mark(case, "NEW", "操作菜单里没有可点的“请求审核”，页面文本已记录", evidence)
                             counts["kept"] += 1
                     except Exception as exc:
                         mark(case, "MANUAL", f"打开申请菜单失败：{exc}", evidence)

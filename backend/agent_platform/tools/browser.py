@@ -1,6 +1,7 @@
 """页面操作工具：通过紫鸟 WebDriver 的调试端口操作已打开的店铺窗口。
 
-- 工具：browser.read / browser.goto / browser.evaluate / browser.click / browser.fill / browser.screenshot。
+- 工具：browser.read / browser.goto / browser.evaluate / browser.click / browser.fill /
+  browser.real_click / browser.click_point / browser.home / browser.screenshot。
 - 失败保留可读原因（连不上端口、页面没加载完、选择器没找到），截图落在 data/evidence。
 - 页面操作不决定业务结果；业务脚本负责判断页面内容是否满足条件。
 - 超时取 settings/timing.py 的 browser_timeout_seconds。
@@ -72,6 +73,18 @@ def register_browser(manager):
             return cdp.click_at(point["x"], point["y"])
         return await _run(manager, shop, action)
 
+    async def click_point(shop, x, y):
+        """按页面坐标真实点击（shadow DOM 里的组件也能点）。"""
+        return await _run(manager, shop, lambda cdp: cdp.click_at(int(x), int(y)))
+
+    async def home(shop):
+        """店铺窗口的启动页（紫鸟给该店铺配置的首页），没有时返回 null。"""
+        browser = getattr(manager.pool, "browser", None)
+        launcher = getattr(browser, "launcher", None)
+        if launcher is None:
+            return None
+        return await launcher(str(shop))
+
     async def screenshot(shop, label="page"):
         def action(cdp):
             EVIDENCE.mkdir(parents=True, exist_ok=True)
@@ -86,4 +99,6 @@ def register_browser(manager):
     manager.tools.register("browser.click", click)
     manager.tools.register("browser.fill", fill)
     manager.tools.register("browser.real_click", real_click)
+    manager.tools.register("browser.click_point", click_point)
+    manager.tools.register("browser.home", home, restart_safe=True)
     manager.tools.register("browser.screenshot", screenshot)
