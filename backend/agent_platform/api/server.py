@@ -58,6 +58,11 @@ def start_panel(manager, port=8765, *, browser_label="紫鸟", shutdown_event=No
             return {"queue": manager.queue_settings.save(values)}
         if name == "save_tool_settings":
             return {"tools": manager.tool_settings.save(values)}
+        if name == "save_erp_settings":
+            return {"erp": manager.erp_settings.save(values)}
+        if name == "test_erp":
+            from ..tools.effiseller import probe
+            return {"erp": await probe(manager)}
         kinds = {"account_overview": "ziniao.accounts", "detect_webdriver": "ziniao.detect",
                  "verify_connection": "ziniao.verify", "save_connection": "ziniao.configure"}
         if name in kinds:

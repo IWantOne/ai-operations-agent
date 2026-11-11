@@ -3,22 +3,32 @@ import { inject, ref } from "vue";
 import { request } from "../api/platform";
 
 const { state, refresh } = inject("workbench");
-const current = state.value.settings?.tools;
-const command = ref(current?.codex_command ?? "");
-const args = ref(current?.codex_args ?? "");
+
+const codex = state.value.settings?.tools;
+const command = ref(codex?.codex_command ?? "");
+const args = ref(codex?.codex_args ?? "");
 const busy = ref(false), message = ref(""), failed = ref(false);
 
-async function save() {
+const erp = state.value.settings?.erp;
+const baseUrl = ref(erp?.base_url ?? "https://test.effiseller.com");
+const appId = ref(erp?.app_id ?? "");
+const appSecret = ref("");
+const erpBusy = ref(false), erpMessage = ref(""), erpFailed = ref(false);
+
+async function post(payload) {
+  return request("action", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...payload, token: state.value.panel.token }),
+  });
+}
+
+async function saveCodex() {
   if (busy.value) return;
   message.value = "";
   failed.value = false;
   busy.value = true;
   try {
-    await request("action", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "save_tool_settings", token: state.value.panel.token,
-        codex_command: command.value, codex_args: args.value }),
-    });
+    await post({ action: "save_tool_settings", codex_command: command.value, codex_args: args.value });
     message.value = "配置已保存，下次工具调用生效。";
     await refresh();
   } catch (e) {
@@ -28,6 +38,43 @@ async function save() {
     busy.value = false;
   }
 }
+
+async function saveErp() {
+  if (erpBusy.value) return;
+  erpMessage.value = "";
+  erpFailed.value = false;
+  erpBusy.value = true;
+  try {
+    await post({ action: "save_erp_settings", base_url: baseUrl.value,
+                 app_id: appId.value, app_secret: appSecret.value });
+    appSecret.value = "";
+    erpMessage.value = "配置已保存，凭据加密存放。";
+    await refresh();
+  } catch (e) {
+    erpFailed.value = true;
+    erpMessage.value = e.message;
+  } finally {
+    erpBusy.value = false;
+  }
+}
+
+async function testErp() {
+  if (erpBusy.value) return;
+  erpMessage.value = "";
+  erpFailed.value = false;
+  erpBusy.value = true;
+  try {
+    const result = await post({ action: "test_erp" });
+    const erpResult = result.erp || {};
+    erpMessage.value = `连接成功：可访问店铺 ${erpResult.stores ?? "未提供"} 家` +
+      (Array.isArray(erpResult.api_types) ? `（${erpResult.api_types.join("、")}）` : "");
+  } catch (e) {
+    erpFailed.value = true;
+    erpMessage.value = e.message;
+  } finally {
+    erpBusy.value = false;
+  }
+}
 </script>
 
 <template>
@@ -35,11 +82,11 @@ async function save() {
     <div class="ap-panelhead">
       <div><h2>Codex</h2>
         <p>把本机 codex-cli 当作工具调用，业务通过 <code>ctx.tool("codex", prompt=...)</code> 使用。</p></div>
-      <span class="ap-badge">{{ current?.codex_command ? '自定义路径' : '使用 PATH 中的 codex' }}</span>
+      <span class="ap-badge">{{ codex?.codex_command ? '自定义路径' : '使用 PATH 中的 codex' }}</span>
     </div>
-    <p v-if="!current" role="alert">当前服务尚不支持工具配置，请重启后端服务后刷新页面。</p>
-    <form @submit.prevent="save" @input="message = ''">
-      <fieldset :disabled="busy || !current">
+    <p v-if="!codex" role="alert">当前服务尚不支持工具配置，请重启后端服务后刷新页面。</p>
+    <form @submit.prevent="saveCodex" @input="message = ''">
+      <fieldset :disabled="busy || !codex">
         <label>可执行文件路径
           <input v-model="command" placeholder="留空使用 PATH 中的 codex" />
         </label>
@@ -58,10 +105,34 @@ async function save() {
 
   <section class="ap-panel tool-panel">
     <div class="ap-panelhead">
-      <div><h2>智易飞</h2><p>业务文件传输与远端引用。</p></div>
-      <span class="ap-badge">未接入</span>
+      <div><h2>智易飞</h2><p>Amazon 原生 API 通道：店铺查询与 SP-API／Ads 请求透传。</p></div>
+      <span class="ap-badge">{{ erp?.secret_set ? '已配置凭据' : '未配置' }}</span>
     </div>
-    <p class="ap-muted">接口协议尚未确认，本版不提供配置；接入时再补连接参数和文件引用。</p>
+    <p v-if="!erp" role="alert">当前服务尚不支持智易飞配置，请重启后端服务后刷新页面。</p>
+    <form @submit.prevent="saveErp" @input="erpMessage = ''">
+      <fieldset :disabled="erpBusy || !erp">
+        <label>部署地址
+          <input v-model="baseUrl" placeholder="https://test.effiseller.com" />
+        </label>
+        <label>App ID
+          <input v-model="appId" placeholder="管理员提供的 App ID" />
+        </label>
+        <label>App Secret
+          <input v-model="appSecret" type="password" autocomplete="new-password"
+                 :placeholder="erp?.secret_set ? '已保存；留空表示不修改' : '管理员提供的 App Secret'" />
+        </label>
+        <p class="ap-muted">
+          App Secret 用本机用户凭据加密后保存，页面不回显。请求超时在「时间与停止策略」里配置。
+          业务通过 <code>ctx.tool("amazon.stores")</code> 和
+          <code>ctx.tool("amazon.request", sid=..., api_type="sp-api", method="GET", path="/sellers/v1/marketplaceParticipations")</code> 使用。
+        </p>
+        <div>
+          <button type="submit" class="ap-btn primary">{{ erpBusy ? '处理中…' : '保存配置' }}</button>
+          <button type="button" class="ap-link" @click="testErp">测试连接</button>
+        </div>
+      </fieldset>
+      <p v-if="erpMessage" :role="erpFailed ? 'alert' : 'status'">{{ erpMessage }}</p>
+    </form>
   </section>
 </template>
 

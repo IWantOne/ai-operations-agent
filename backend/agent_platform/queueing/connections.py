@@ -4,7 +4,7 @@ import hashlib
 import json
 from .models import Executor
 from .repository import encode
-from ..connectors.connections import protect
+from ..settings.secrets import protect
 from ..connectors.discovery import detect_webdriver
 
 
