@@ -7,7 +7,7 @@ import time
 
 from .bindings import REQUEST_LABELS, load_bindings, url_for
 from .cases import judge
-from . import apply, pages
+from . import apply, market, pages
 
 
 def register(manager):
@@ -23,6 +23,7 @@ def register(manager):
             ctx.log("feedback_processed", {"checked": 0, "reason": "没有待处理的差评"})
             return
         bindings = load_bindings()
+        login_wait = manager.timing_settings.read()["login_wait_seconds"]
         counts = {"checked": 0, "removed": 0, "submitted": 0, "manual": 0, "kept": 0}
 
         for case in cases:
@@ -50,6 +51,27 @@ def register(manager):
 
             lease = await ctx.window(shop)
             try:
+                try:
+                    state, _code = await market.prepare(ctx, shop, case["marketplace_id"], login_wait)
+                except Exception as exc:
+                    shot = await pages.screenshot(ctx, shop, f"feedback-prepare-{case['order_id']}")
+                    mark(case, "MANUAL", f"打开店铺站点失败：{exc}", {"screenshot": shot.get("path")})
+                    counts["manual"] += 1
+                    continue
+                if state.get("gate") != "LOGGED_IN":
+                    shot = await pages.screenshot(ctx, shop, f"feedback-login-{case['order_id']}")
+                    reason = {"BLOCKED": "亚马逊反爬拦截（Robot Check）",
+                              "CAPTCHA": "出现验证码"}.get(state.get("gate"),
+                                                          "登录没有完成")
+                    mark(case, "MANUAL", f"{reason}，{login_wait} 秒内没有等到智鸟自动登录，需要人工登录",
+                         {"url": state.get("loginHref"),
+                          "gate": state.get("gate"),
+                          "emailFilled": state.get("emailFilled"),
+                          "passwordFilled": state.get("passwordFilled"),
+                          "otpFilled": state.get("otpFilled"),
+                          "screenshot": shot.get("path")})
+                    counts["manual"] += 1
+                    continue
                 try:
                     await pages.open(ctx, shop, case["marketplace_id"])
                     state, trail = await pages.find_order(ctx, shop, case["order_id"])

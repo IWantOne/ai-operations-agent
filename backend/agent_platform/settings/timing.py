@@ -20,6 +20,7 @@ DEFAULTS = {
     "integration_timeout_seconds": 30,
     "browser_timeout_seconds": 30,
     "window_open_confirm_seconds": 15,
+    "login_wait_seconds": 40,
     "api_action_timeout_seconds": 60,
 }
 RANGES = {
@@ -33,6 +34,7 @@ RANGES = {
     "integration_timeout_seconds": (1, 600),
     "browser_timeout_seconds": (1, 600),
     "window_open_confirm_seconds": (1, 120),
+    "login_wait_seconds": (5, 120),
 }
 
 
