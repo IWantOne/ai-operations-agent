@@ -1,6 +1,7 @@
 """差评处理编排：选 case → 找账号 → 开窗 → 页面核验 → 写状态与证据。
 
-页面动作在 pages.py，判定规则在 cases.py，映射在 bindings.py；本文件只做编排。
+原则：先写原因，再截图。截图只是辅助证据，失败就跳过，不能影响原因落库，
+也不能让一条 case 的失败中断整批。
 """
 import json
 import time
@@ -15,6 +16,18 @@ def register(manager):
     def mark(case, status, reason, evidence):
         manager.store.update("feedback_case", case["id"], status=status, reason=reason,
                              evidence=json.dumps(evidence, ensure_ascii=False), updated_at=time.time())
+
+    async def capture(ctx, shop, case, label, evidence):
+        """理由已经落库之后才截图；失败直接跳过。"""
+        try:
+            shot = await pages.screenshot(ctx, shop, label)
+        except Exception:
+            return
+        path = shot.get("path") if isinstance(shot, dict) else None
+        if path:
+            evidence["screenshot"] = path
+            manager.store.update("feedback_case", case["id"],
+                                 evidence=json.dumps(evidence, ensure_ascii=False))
 
     async def process(ctx):
         limit = int(ctx.input.get("limit", 3))
@@ -55,39 +68,40 @@ def register(manager):
                 try:
                     state, _code = await market.prepare(ctx, shop, case["marketplace_id"], login_wait)
                 except Exception as exc:
-                    shot = await pages.screenshot(ctx, shop, f"feedback-prepare-{case['order_id']}")
-                    mark(case, "MANUAL", f"打开店铺站点失败：{exc}", {"screenshot": shot.get("path")})
+                    evidence = {}
+                    mark(case, "MANUAL", f"打开店铺站点失败：{exc}", evidence)
+                    await capture(ctx, shop, case, f"feedback-prepare-{case['order_id']}", evidence)
                     counts["manual"] += 1
                     continue
+
                 if state.get("gate") != "LOGGED_IN":
-                    shot = await pages.screenshot(ctx, shop, f"feedback-login-{case['order_id']}")
                     reason = {"BLOCKED": "亚马逊反爬拦截（Robot Check）",
-                              "CAPTCHA": "出现验证码"}.get(state.get("gate"),
-                                                          "登录没有完成")
-                    mark(case, "MANUAL", f"{reason}，{login_wait} 秒内没有等到智鸟自动登录，需要人工登录",
-                         {"url": state.get("loginHref"),
-                          "gate": state.get("gate"),
-                          "emailFilled": state.get("emailFilled"),
-                          "passwordFilled": state.get("passwordFilled"),
-                          "otpFilled": state.get("otpFilled"),
-                          "screenshot": shot.get("path")})
+                              "CAPTCHA": "出现验证码"}.get(state.get("gate"), "登录没有完成")
+                    evidence = {"url": state.get("loginHref"), "gate": state.get("gate"),
+                                "emailFilled": state.get("emailFilled"),
+                                "passwordFilled": state.get("passwordFilled"),
+                                "otpFilled": state.get("otpFilled")}
+                    mark(case, "MANUAL",
+                         f"{reason}，{login_wait} 秒内没有等到紫鸟自动登录，需要人工登录", evidence)
+                    await capture(ctx, shop, case, f"feedback-login-{case['order_id']}", evidence)
                     counts["manual"] += 1
                     continue
+
                 try:
                     await pages.open(ctx, shop, case["marketplace_id"])
                     state, trail = await pages.find_order(ctx, shop, case["order_id"])
                 except Exception as exc:
-                    shot = await pages.screenshot(ctx, shop, f"feedback-{case['order_id']}")
-                    mark(case, "MANUAL", f"打开反馈页失败：{exc}", {"screenshot": shot.get("path")})
+                    evidence = {}
+                    mark(case, "MANUAL", f"打开反馈页失败：{exc}", evidence)
+                    await capture(ctx, shop, case, f"feedback-{case['order_id']}", evidence)
                     counts["manual"] += 1
                     continue
 
                 kind = pages.page_kind(state)
                 evidence = {"url": state.get("url"), "title": state.get("title"), "pages": trail}
                 if kind == "login":
-                    shot = await pages.screenshot(ctx, shop, f"feedback-login-{case['order_id']}")
-                    evidence["screenshot"] = shot.get("path")
                     mark(case, "MANUAL", "页面跳到了登录页，需要先在该店铺里人工登录", evidence)
+                    await capture(ctx, shop, case, f"feedback-login-{case['order_id']}", evidence)
                     counts["manual"] += 1
                     continue
 
@@ -108,9 +122,8 @@ def register(manager):
                             mark(case, "NEW", "菜单里没有识别到“请求审核”，页面文本已记录", evidence)
                             counts["kept"] += 1
                     except Exception as exc:
-                        shot = await pages.screenshot(ctx, shop, f"feedback-menu-{case['order_id']}")
-                        evidence.update(menu_error=str(exc), screenshot=shot.get("path"))
                         mark(case, "MANUAL", f"打开申请菜单失败：{exc}", evidence)
+                        await capture(ctx, shop, case, f"feedback-menu-{case['order_id']}", evidence)
                         counts["manual"] += 1
                 else:
                     mark(case, status, reason, evidence)
@@ -118,7 +131,10 @@ def register(manager):
                     counts[key] += 1
                 counts["checked"] += 1
             finally:
-                await ctx.release(lease["id"])
+                try:
+                    await ctx.release(lease["id"])
+                except Exception:
+                    pass
 
         ctx.log("feedback_processed", counts)
         return counts
