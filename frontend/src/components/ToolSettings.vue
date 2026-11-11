@@ -1,5 +1,5 @@
 <script setup>
-import { inject, ref } from "vue";
+import { inject, reactive, ref } from "vue";
 import { request } from "../api/platform";
 
 const { state, refresh } = inject("workbench");
@@ -14,6 +14,13 @@ const baseUrl = ref(erp?.base_url ?? "https://test.effiseller.com");
 const appId = ref(erp?.app_id ?? "");
 const appSecret = ref("");
 const erpBusy = ref(false), erpMessage = ref(""), erpFailed = ref(false);
+
+// 通用外部应用：飞书、领星等，API 与 MCP 两种传输。
+const integrations = state.value.settings?.integrations || {};
+const forms = reactive({});
+for (const [key, value] of Object.entries(integrations)) {
+  forms[key] = { ...value, app_secret: "", busy: false, message: "", failed: false };
+}
 
 async function post(payload) {
   return request("action", {
@@ -75,6 +82,57 @@ async function testErp() {
     erpBusy.value = false;
   }
 }
+
+function payloadOf(form) {
+  return {
+    transport: form.transport, base_url: form.base_url, app_id: form.app_id,
+    app_secret: form.app_secret, auth: form.auth, token_path: form.token_path,
+    token_field: form.token_field, mcp_command: form.mcp_command,
+  };
+}
+
+async function saveIntegration(key) {
+  const form = forms[key];
+  if (form.busy) return;
+  form.message = "";
+  form.failed = false;
+  form.busy = true;
+  try {
+    await post({ action: "save_integration", provider: key, ...payloadOf(form) });
+    form.app_secret = "";
+    form.message = "配置已保存，凭据加密存放。";
+    await refresh();
+  } catch (e) {
+    form.failed = true;
+    form.message = e.message;
+  } finally {
+    form.busy = false;
+  }
+}
+
+async function testIntegration(key) {
+  const form = forms[key];
+  if (form.busy) return;
+  form.message = "";
+  form.failed = false;
+  form.busy = true;
+  try {
+    const result = (await post({ action: "test_integration", provider: key })).integration || {};
+    if (result.transport === "mcp") {
+      form.message = `MCP 可用：${result.tools ?? 0} 个工具` +
+        (Array.isArray(result.names) && result.names.length ? `（${result.names.join("、")}）` : "");
+    } else if (result.auth === "token") {
+      form.message = "认证成功，token 已获取。";
+    } else {
+      form.message = `连通，HTTP ${result.status ?? "未提供"}。`;
+    }
+  } catch (e) {
+    form.failed = true;
+    form.message = e.message;
+  } finally {
+    form.busy = false;
+  }
+}
 </script>
 
 <template>
@@ -134,13 +192,73 @@ async function testErp() {
       <p v-if="erpMessage" :role="erpFailed ? 'alert' : 'status'">{{ erpMessage }}</p>
     </form>
   </section>
+
+  <section v-for="(form, key) in forms" :key="key" class="ap-panel tool-panel">
+    <div class="ap-panelhead">
+      <div><h2>{{ form.label }}</h2>
+        <p>API 或 MCP 接入，业务通过 <code>api.request</code>／<code>mcp.call</code> 使用。</p></div>
+      <span class="ap-badge">{{ form.secret_set ? '已配置凭据' : '未配置' }}</span>
+    </div>
+    <form @submit.prevent="saveIntegration(key)" @input="form.message = ''">
+      <fieldset :disabled="form.busy">
+        <label>传输方式
+          <select v-model="form.transport">
+            <option value="api">API（HTTP）</option>
+            <option value="mcp">MCP（stdio）</option>
+          </select>
+        </label>
+        <template v-if="form.transport === 'api'">
+          <label>部署地址
+            <input v-model="form.base_url" placeholder="https://..." />
+          </label>
+          <label>App ID
+            <input v-model="form.app_id" placeholder="应用 App ID" />
+          </label>
+          <label>App Secret
+            <input v-model="form.app_secret" type="password" autocomplete="new-password"
+                   :placeholder="form.secret_set ? '已保存；留空表示不修改' : '应用 App Secret'" />
+          </label>
+          <label>认证方式
+            <select v-model="form.auth">
+              <option value="token">先换 token，再带 Bearer</option>
+              <option value="headers">App ID／Secret 放请求头</option>
+              <option value="none">不带认证</option>
+            </select>
+          </label>
+          <template v-if="form.auth === 'token'">
+            <label>获取 token 的路径
+              <input v-model="form.token_path" placeholder="/open-apis/auth/v3/tenant_access_token/internal" />
+            </label>
+            <label>token 字段名
+              <input v-model="form.token_field" placeholder="tenant_access_token" />
+            </label>
+          </template>
+        </template>
+        <template v-else>
+          <label>启动命令
+            <input v-model="form.mcp_command" placeholder='"C:\\path\\node.exe" server.js' />
+          </label>
+        </template>
+        <p class="ap-muted">
+          请求超时在「时间与停止策略」里配置。API 工具：
+          <code>ctx.tool("api.request", provider="{{ key }}", method="GET", path="/...")</code>；
+          MCP 工具：<code>ctx.tool("mcp.call", provider="{{ key }}", tool="...", arguments={})</code>。
+        </p>
+        <div>
+          <button type="submit" class="ap-btn primary">{{ form.busy ? '处理中…' : '保存配置' }}</button>
+          <button type="button" class="ap-link" @click="testIntegration(key)">测试连接</button>
+        </div>
+      </fieldset>
+      <p v-if="form.message" :role="form.failed ? 'alert' : 'status'">{{ form.message }}</p>
+    </form>
+  </section>
 </template>
 
 <style scoped>
 .tool-panel {width:min(100%,660px);margin-bottom:16px}
 fieldset {padding:0;border:none;display:grid;gap:14px;margin:0;min-width:0}
 label {display:grid;gap:8px;font-size:13px}
-input {width:100%;box-sizing:border-box;font:inherit;padding:8px;border-radius:5px;border:1px solid var(--ap-line);background:var(--ap-panel);color:var(--ap-text)}
+input,select {width:100%;box-sizing:border-box;font:inherit;padding:8px;border-radius:5px;border:1px solid var(--ap-line);background:var(--ap-panel);color:var(--ap-text)}
 form>p {padding-top:12px}
 [role=alert] {color:var(--ap-red)}
 </style>

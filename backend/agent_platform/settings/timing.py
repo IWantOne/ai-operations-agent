@@ -17,6 +17,7 @@ DEFAULTS = {
     "webdriver_timeout_seconds": 45,
     "codex_timeout_seconds": 600,
     "erp_timeout_seconds": 30,
+    "integration_timeout_seconds": 30,
     "api_action_timeout_seconds": 60,
 }
 RANGES = {
@@ -27,6 +28,7 @@ RANGES = {
     "cli_timeout_seconds": (1, 3600), "webdriver_timeout_seconds": (1, 3600),
     "codex_timeout_seconds": (1, 86400),
     "erp_timeout_seconds": (1, 600),
+    "integration_timeout_seconds": (1, 600),
 }
 
 

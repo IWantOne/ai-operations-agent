@@ -63,6 +63,13 @@ def start_panel(manager, port=8765, *, browser_label="紫鸟", shutdown_event=No
         if name == "test_erp":
             from ..tools.effiseller import probe
             return {"erp": await probe(manager)}
+        if name == "save_integration":
+            provider = values.get("provider")
+            return {"integration": manager.integration_settings.save(provider, values)}
+        if name == "test_integration":
+            from ..tools.integrations import probe as integration_probe
+            provider = values.get("provider")
+            return {"integration": await integration_probe(manager, provider)}
         kinds = {"account_overview": "ziniao.accounts", "detect_webdriver": "ziniao.detect",
                  "verify_connection": "ziniao.verify", "save_connection": "ziniao.configure"}
         if name in kinds:

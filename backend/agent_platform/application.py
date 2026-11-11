@@ -3,7 +3,7 @@ from .employees import register_handlers
 from .resources import ResourcePool
 from .scheduler import Scheduler
 from .queueing import QueueService
-from .tools import register_codex, register_erp
+from .tools import register_codex, register_erp, register_integrations
 
 
 def build_application(store, browser, *, lease_seconds=None, clock=None):
@@ -14,5 +14,6 @@ def build_application(store, browser, *, lease_seconds=None, clock=None):
     register_handlers(manager)
     register_codex(manager)
     register_erp(manager)
+    register_integrations(manager)
     scheduler = Scheduler(manager, **options)
     return manager, scheduler

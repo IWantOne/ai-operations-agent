@@ -20,6 +20,7 @@ from ..settings.timing import TimingSettings
 from ..settings.queue import QueueSettings
 from ..settings.tools import ToolSettings
 from ..settings.erp import ErpSettings
+from ..settings.integrations import IntegrationSettings
 from ..logs.errors import exception_details, PersistedFailure
 from ..logs.writer import LogWriter
 from ..skills import load as load_skill
@@ -34,6 +35,7 @@ class QueueService:
         self.queue_settings = QueueSettings(store)
         self.tool_settings = ToolSettings(store)
         self.erp_settings = ErpSettings(store)
+        self.integration_settings = IntegrationSettings(store)
         self.definitions = TaskDefinitions(store, clock, self.timing_settings)
         self.jobs = self.definitions.jobs
         self.repository, self.dispatcher = Repository(store, clock), Dispatcher(self)
@@ -531,4 +533,5 @@ class QueueService:
                 "fault": self.fault,
                 "settings": {"retry": self.retry_settings.read(), "queue": self.queue_settings.read(),
                              "tools": self.tool_settings.read(), "erp": self.erp_settings.public(),
+                             "integrations": self.integration_settings.all_public(),
                              "runtime": {"timing": self.timing_settings.read()}}}
