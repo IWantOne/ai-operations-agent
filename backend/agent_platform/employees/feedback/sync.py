@@ -64,5 +64,6 @@ def register(manager):
         ctx.log("feedback_synced", {"total": total, "added": added, "kept": kept,
                                     "skipped": len(skipped), "reasons": skipped[:10],
                                     "seconds": time.time() - started})
+        return {"total": total, "added": added, "kept": kept, "skipped": len(skipped)}
 
     manager.register("feedback.sync", sync)

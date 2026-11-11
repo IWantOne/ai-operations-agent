@@ -49,5 +49,6 @@ def register(manager):
                                       "response": str(body)[:300]})
         if not ok:
             raise RuntimeError(f"智易飞回传未成功：{str(body)[:300]}")
+        return {"sent": len(rows), "ok": True}
 
     manager.register("feedback.report", report)

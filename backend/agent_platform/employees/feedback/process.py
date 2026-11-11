@@ -98,5 +98,6 @@ def register(manager):
                 await ctx.release(lease["id"])
 
         ctx.log("feedback_processed", counts)
+        return counts
 
     manager.register("feedback.process", process)
