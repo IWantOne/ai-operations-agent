@@ -30,10 +30,11 @@ LOOKUP = """function zq(selector){
 
 def click_script(selector):
     """后台按钮响应指针序列，直接 element.click() 常常没有反应。"""
+    message = json.dumps(f"找不到元素：{selector}")
     return f"""(()=>{{
 {LOOKUP}
  const el=zq({json.dumps(selector)});
- if(!el)return JSON.stringify({{errorCode:'找不到元素：{selector}'}});
+ if(!el)return JSON.stringify({{errorCode:{message}}});
  for(const type of ['pointerover','pointerenter','pointerdown','mousedown','pointerup','mouseup','click']){{
   el.dispatchEvent(new MouseEvent(type,{{bubbles:true,cancelable:true,composed:true,view:window}}));
  }}
@@ -43,10 +44,11 @@ def click_script(selector):
 
 def fill_script(selector, text):
     """通过原型 setter 写入，框架才会感知到值变化。"""
+    message = json.dumps(f"找不到元素：{selector}")
     return f"""(()=>{{
 {LOOKUP}
  const el=zq({json.dumps(selector)});
- if(!el)return JSON.stringify({{errorCode:'找不到元素：{selector}'}});
+ if(!el)return JSON.stringify({{errorCode:{message}}});
  const proto=Object.getPrototypeOf(el);
  const setter=Object.getOwnPropertyDescriptor(proto,'value');
  if(setter&&setter.set){{setter.set.call(el,{json.dumps(text)});}}else{{el.value={json.dumps(text)};}}

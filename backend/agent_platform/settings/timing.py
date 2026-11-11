@@ -19,6 +19,7 @@ DEFAULTS = {
     "erp_timeout_seconds": 30,
     "integration_timeout_seconds": 30,
     "browser_timeout_seconds": 30,
+    "window_open_confirm_seconds": 15,
     "api_action_timeout_seconds": 60,
 }
 RANGES = {
@@ -31,6 +32,7 @@ RANGES = {
     "erp_timeout_seconds": (1, 600),
     "integration_timeout_seconds": (1, 600),
     "browser_timeout_seconds": (1, 600),
+    "window_open_confirm_seconds": (1, 120),
 }
 
 

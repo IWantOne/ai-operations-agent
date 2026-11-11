@@ -34,6 +34,8 @@ class WebDriverBrowser(Browser):
         super().__init__(store, stores)
         self.config = config
         self.log = LogWriter(store, "resource_log")
+        # 店铺 ID ↔ 窗口标识：getRunningInfo 常只给 browserOauth，不给 browserId。
+        self.oauth = {}
 
     # ------------------------------------------------------------ 传输层
     # 只调平台、只抛原始异常，不写日志。
@@ -126,9 +128,16 @@ class WebDriverBrowser(Browser):
             shop_id = str(row.get("browserId") or "")
             if shop_id:
                 stores[shop_id] = str(row.get("browserName") or shop_id)
+                if row.get("browserOauth"):
+                    self.oauth[shop_id] = str(row["browserOauth"])
         self.stores.clear()
         self.stores.update(stores)
         return stores
+
+    async def _oauth_for(self, shop_id):
+        if str(shop_id) not in self.oauth:
+            await self.refresh_stores()
+        return self.oauth.get(str(shop_id))
 
     async def _ensure_shop(self, shop_id):
         if shop_id in self.stores:
@@ -138,6 +147,11 @@ class WebDriverBrowser(Browser):
             raise ConnectorError(f"店铺 {shop_id} 不在紫鸟账户的 {len(self.stores)} 个店铺里")
 
     async def inspect(self, window_ref):
+        await self._oauth_for(window_ref)
+        targets = {str(window_ref)}
+        oauth = self.oauth.get(str(window_ref))
+        if oauth:
+            targets.add(oauth)
         try:
             result = await self._observe("getRunningInfo")
         except Exception as exc:
@@ -149,7 +163,7 @@ class WebDriverBrowser(Browser):
             keys = (row.get("browserId"), row.get("browserOauth")) if isinstance(row, dict) else (row,)
             if not any(isinstance(k, (str, int)) and str(k) for k in keys):
                 raise ConnectorError(f"getRunningInfo 窗口记录缺少标识：{row!r}")
-            if any(str(k) == str(window_ref) for k in keys if k not in (None, "")):
+            if any(str(k) in targets for k in keys if k not in (None, "")):
                 return True
         return False
 
@@ -170,16 +184,29 @@ class WebDriverBrowser(Browser):
             raise ConnectorError(f"店铺 {shop_id} 开窗请求失败，远端结果不明：{exc}") from exc
         if not result.get("debuggingPort"):
             raise ConnectorError("紫鸟未返回调试端口。")
+        if result.get("browserOauth"):
+            self.oauth[str(shop_id)] = str(result["browserOauth"])
+        wait = TimingSettings(self.store).read()["window_open_confirm_seconds"]
+        deadline = time.monotonic() + wait
+        while time.monotonic() < deadline:
+            try:
+                confirmed = await self.inspect(shop_id)
+            except Exception as exc:
+                raise ConnectorError(f"店铺 {shop_id} 开窗后检查失败，远端结果不明：{exc}") from exc
+            if confirmed is True:
+                self._record(ConnectorCode.OPENED, {"operation": "open", "store_id": shop_id})
+                return shop_id
+            await asyncio.sleep(1)
         try:
-            confirmed = await self.inspect(shop_id)
-        except Exception as exc:
-            raise ConnectorError(f"店铺 {shop_id} 开窗后检查失败，远端结果不明：{exc}") from exc
-        if confirmed is not True:
-            raise ConnectorError(f"店铺 {shop_id} 开窗请求已返回，但未确认窗口在运行")
-        self._record(ConnectorCode.OPENED, {"operation": "open", "store_id": shop_id})
-        return shop_id
+            await self._observe("stopBrowser", browserId=shop_id, duplicate=0)
+        except Exception:
+            pass
+        raise ConnectorError(
+            f"店铺 {shop_id} 开窗请求已返回（调试端口 {result.get('debuggingPort')}），"
+            f"但 {wait} 秒内没在运行窗口列表里确认，已尝试关闭该窗口")
 
     async def close(self, window_ref):
+        await self._oauth_for(window_ref)
         try:
             running = await self.inspect(window_ref)
         except Exception as exc:
@@ -192,13 +219,18 @@ class WebDriverBrowser(Browser):
             await self._observe("stopBrowser", browserId=window_ref, duplicate=0)
         except Exception as exc:
             raise ConnectorError(f"窗口 {window_ref} 关闭请求失败，远端结果不明：{exc}") from exc
-        try:
-            confirmed = await self.inspect(window_ref)
-        except Exception as exc:
-            raise ConnectorError(f"窗口 {window_ref} 关闭后检查失败，远端结果不明：{exc}") from exc
-        if confirmed is not False:
-            raise ConnectorError(f"窗口 {window_ref} 关闭请求已返回，但未确认窗口已关闭")
-        self._record(ConnectorCode.CLOSED, {"operation": "close", "store_id": window_ref})
+        wait = TimingSettings(self.store).read()["window_open_confirm_seconds"]
+        deadline = time.monotonic() + wait
+        while time.monotonic() < deadline:
+            try:
+                confirmed = await self.inspect(window_ref)
+            except Exception as exc:
+                raise ConnectorError(f"窗口 {window_ref} 关闭后检查失败，远端结果不明：{exc}") from exc
+            if confirmed is False:
+                self._record(ConnectorCode.CLOSED, {"operation": "close", "store_id": window_ref})
+                return
+            await asyncio.sleep(1)
+        raise ConnectorError(f"窗口 {window_ref} 关闭请求已返回，但 {wait} 秒内未确认窗口已关闭")
 
     async def find_windows(self, shop_id):
         try:
@@ -208,6 +240,11 @@ class WebDriverBrowser(Browser):
         return [shop_id] if running else []
 
     async def debug_port(self, shop_id):
+        await self._oauth_for(shop_id)
+        targets = {str(shop_id)}
+        oauth = self.oauth.get(str(shop_id))
+        if oauth:
+            targets.add(oauth)
         try:
             result = await self._observe("getRunningInfo")
         except Exception as exc:
@@ -219,7 +256,7 @@ class WebDriverBrowser(Browser):
             if not isinstance(row, dict):
                 continue
             keys = (row.get("browserId"), row.get("browserOauth"))
-            if any(str(key) == str(shop_id) for key in keys if key not in (None, "")):
+            if any(str(key) in targets for key in keys if key not in (None, "")):
                 port = row.get("debuggingPort")
                 if not port:
                     raise ConnectorError(f"店铺 {shop_id} 的窗口在运行，但没有返回调试端口")
@@ -250,10 +287,14 @@ class Connections:
 
     def load_stores(self):
         """店铺池从数据库读；数据库由紫鸟账户列表同步。"""
-        rows = self.store.all("SELECT shop_id, name FROM store_info WHERE expired=0 ORDER BY id")
+        rows = self.store.all("SELECT shop_id, name, oauth FROM store_info WHERE expired=0 ORDER BY id")
         self.stores.clear()
         self.stores.update({row["shop_id"]: row["name"] for row in rows})
-        self.browser.stores = dict(self.stores)
+        browser = self.browser
+        browser.stores = dict(self.stores)
+        if isinstance(getattr(browser, "oauth", None), dict):
+            browser.oauth.clear()
+            browser.oauth.update({row["shop_id"]: row["oauth"] for row in rows if row["oauth"]})
         return dict(self.stores)
 
     async def sync_stores(self):
@@ -275,6 +316,7 @@ class Connections:
                           "platform": str(row.get("platform_name") or ""),
                           "account": str(row.get("store_username") or ""),
                           "expired": 1 if row.get("isExpired") else 0,
+                          "oauth": str(row.get("browserOauth") or ""),
                           "seen_at": now}
                 existing = self.store.one("SELECT id FROM store_info WHERE shop_id=?", (shop_id,))
                 if existing:
@@ -308,7 +350,8 @@ class Connections:
             window_error = f"窗口状态返回格式无效：{running_reply!r}"
         rows = []
         for row in self.store.all("SELECT * FROM store_info ORDER BY id"):
-            opened = row["shop_id"] in running_ids
+            identifiers = {row["shop_id"], row["oauth"]} - {""}
+            opened = bool(identifiers & running_ids)
             rows.append({
                 "provider": "ziniao",
                 "id": row["shop_id"],

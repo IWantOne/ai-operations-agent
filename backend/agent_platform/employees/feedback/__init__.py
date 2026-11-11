@@ -10,6 +10,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 from ...tools.effiseller import build_client
+from .process import register as register_process
 
 SHANGHAI = timezone(timedelta(hours=8))
 ORDER_ID = re.compile(r"^\d{3}-\d{7}-\d{7}$")
@@ -116,3 +117,4 @@ def register(manager):
                                     "seconds": time.time() - started})
 
     manager.register("feedback.sync", sync)
+    register_process(manager)

@@ -30,9 +30,18 @@ class Store:
         self.connection = self.adapter.connect(source)
         try:
             self.adapter.initialize(self.connection, schema)
+            self._migrate()
         except BaseException:
             self.connection.close()
             raise
+
+    def _migrate(self) -> None:
+        """为已存在的库补列；新建库由 schema.sql 直接建全。"""
+        if self.adapter.NAME == "sqlite":
+            columns = {row[1] for row in self.connection.execute("PRAGMA table_info(store_info)")}
+            if columns and "oauth" not in columns:
+                self.connection.execute("ALTER TABLE store_info ADD COLUMN oauth TEXT NOT NULL DEFAULT ''")
+                self.connection.commit()
 
     def _sql(self, sql: str) -> str:
         return self.adapter.placeholders(sql)

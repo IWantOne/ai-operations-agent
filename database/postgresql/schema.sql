@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS platform_setting (
+﻿CREATE TABLE IF NOT EXISTS platform_setting (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
@@ -199,5 +199,6 @@ CREATE TABLE IF NOT EXISTS store_info (
     platform TEXT NOT NULL DEFAULT '',
     account TEXT NOT NULL DEFAULT '',
     expired INTEGER NOT NULL DEFAULT 0,
+    oauth TEXT NOT NULL DEFAULT '',
     seen_at DOUBLE PRECISION NOT NULL
 );
