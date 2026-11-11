@@ -7,7 +7,7 @@ import time
 
 from .bindings import REQUEST_LABELS, load_bindings, url_for
 from .cases import judge
-from . import pages
+from . import apply, pages
 
 
 def register(manager):
@@ -52,30 +52,43 @@ def register(manager):
             try:
                 try:
                     await pages.open(ctx, shop, case["marketplace_id"])
-                    state = await pages.read_row(ctx, shop, case["order_id"])
+                    state, trail = await pages.find_order(ctx, shop, case["order_id"])
                 except Exception as exc:
                     shot = await pages.screenshot(ctx, shop, f"feedback-{case['order_id']}")
                     mark(case, "MANUAL", f"打开反馈页失败：{exc}", {"screenshot": shot.get("path")})
                     counts["manual"] += 1
                     continue
 
+                kind = pages.page_kind(state)
+                evidence = {"url": state.get("url"), "title": state.get("title"), "pages": trail}
+                if kind == "login":
+                    shot = await pages.screenshot(ctx, shop, f"feedback-login-{case['order_id']}")
+                    evidence["screenshot"] = shot.get("path")
+                    mark(case, "MANUAL", "页面跳到了登录页，需要先在该店铺里人工登录", evidence)
+                    counts["manual"] += 1
+                    continue
+
                 status, reason, extra = judge(state, case["order_id"])
-                evidence = {"url": state.get("url"), "title": state.get("title"), **extra}
+                evidence.update(extra)
                 if status == "NEW":
                     try:
                         menu = await pages.open_menu(ctx, shop, case["order_id"])
                         evidence.update(menu=menu.get("items", []),
                                         page_text=(menu.get("text") or "")[:2000])
                         labels = [str(item.get("text", "")).lower() for item in evidence["menu"]]
-                        reason = ("已打开申请菜单，下一步提交（待确认审核页）"
-                                  if any(any(label in text for label in REQUEST_LABELS) for text in labels)
-                                  else "菜单里没有识别到“请求审核”，页面文本已记录")
+                        if any(any(label in text for label in REQUEST_LABELS) for text in labels):
+                            result, reason, extra = await apply.run(ctx, shop, case["order_id"])
+                            evidence.update(extra)
+                            mark(case, result, reason, evidence)
+                            counts[{"SUBMITTED": "submitted", "MANUAL": "manual"}.get(result, "kept")] += 1
+                        else:
+                            mark(case, "NEW", "菜单里没有识别到“请求审核”，页面文本已记录", evidence)
+                            counts["kept"] += 1
                     except Exception as exc:
                         shot = await pages.screenshot(ctx, shop, f"feedback-menu-{case['order_id']}")
                         evidence.update(menu_error=str(exc), screenshot=shot.get("path"))
-                        reason = f"打开申请菜单失败：{exc}"
-                    mark(case, "NEW", reason, evidence)
-                    counts["kept"] += 1
+                        mark(case, "MANUAL", f"打开申请菜单失败：{exc}", evidence)
+                        counts["manual"] += 1
                 else:
                     mark(case, status, reason, evidence)
                     key = {"REMOVED": "removed", "SUBMITTED": "submitted", "MANUAL": "manual"}[status]
