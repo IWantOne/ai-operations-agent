@@ -15,6 +15,7 @@ DEFAULTS = {
     "retry_delay_seconds": 0.1,
     "cli_timeout_seconds": 60,
     "webdriver_timeout_seconds": 45,
+    "codex_timeout_seconds": 600,
     "api_action_timeout_seconds": 60,
 }
 RANGES = {
@@ -23,6 +24,7 @@ RANGES = {
     "window_lease_seconds": (1, 604800), "retry_delay_seconds": (0.1, 86400),
     "api_action_timeout_seconds": (1, 86400),
     "cli_timeout_seconds": (1, 3600), "webdriver_timeout_seconds": (1, 3600),
+    "codex_timeout_seconds": (1, 86400),
 }
 
 

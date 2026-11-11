@@ -15,6 +15,7 @@ const fields = [
   ["cli_timeout_seconds", "紫鸟 CLI 单次调用超时", 1, 3600, "下一次 CLI 调用生效。超时会中止调用并记录异常。"],
   ["api_action_timeout_seconds", "工作台操作接口等待上限", 1, 86400, "下一次操作请求生效。限制提交入口的响应等待；外部工作返回操作 ID 后由页面查询实际结果。"],
   ["webdriver_timeout_seconds", "紫鸟 WebDriver HTTP 超时", 1, 3600, "下一次 HTTP 调用生效，限制连接和读取等待。"],
+  ["codex_timeout_seconds", "Codex 单次调用上限", 1, 86400, "下一次 Codex 工具调用生效。超时会停止整个进程树并保留已收到的输出。"],
 ];
 async function save() {
   busy.value = true; message.value = ""; failed.value = false;

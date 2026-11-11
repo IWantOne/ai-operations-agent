@@ -38,7 +38,7 @@ def _preview(text):
     return text[:PREVIEW_LIMIT], True
 
 
-async def run_codex(settings, prompt, cwd=None):
+async def run_codex(settings, prompt, cwd=None, timeout=600):
     if not isinstance(prompt, str) or not prompt.strip():
         raise ValueError("codex 需要非空的 prompt")
     executable = resolve_codex(settings.get("codex_command", ""))
@@ -47,7 +47,6 @@ async def run_codex(settings, prompt, cwd=None):
     process = await asyncio.create_subprocess_exec(
         *argv, cwd=cwd, stdin=asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-    timeout = settings.get("codex_timeout_seconds") or 600
     try:
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout)
     except asyncio.TimeoutError as exc:
@@ -87,6 +86,7 @@ def register_codex(manager):
     async def codex(prompt, cwd=None, **extra):
         if extra:
             raise ValueError(f"codex 不接受参数：{sorted(extra)}")
-        return await run_codex(manager.tool_settings.read(), prompt, cwd)
+        timeout = manager.timing_settings.read()["codex_timeout_seconds"]
+        return await run_codex(manager.tool_settings.read(), prompt, cwd, timeout)
 
     manager.tools.register("codex", codex)

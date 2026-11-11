@@ -6,25 +6,18 @@ const { state, refresh } = inject("workbench");
 const current = state.value.settings?.tools;
 const command = ref(current?.codex_command ?? "");
 const args = ref(current?.codex_args ?? "");
-const timeout = ref(current?.codex_timeout_seconds ?? 600);
 const busy = ref(false), message = ref(""), failed = ref(false);
 
 async function save() {
   if (busy.value) return;
   message.value = "";
   failed.value = false;
-  if (!Number.isFinite(Number(timeout.value)) || Number(timeout.value) < 1 || Number(timeout.value) > 86400) {
-    failed.value = true;
-    message.value = "单次调用上限必须为 1–86400 秒。";
-    return;
-  }
   busy.value = true;
   try {
     await request("action", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "save_tool_settings", token: state.value.panel.token,
-        codex_command: command.value, codex_args: args.value,
-        codex_timeout_seconds: Number(timeout.value) }),
+        codex_command: command.value, codex_args: args.value }),
     });
     message.value = "配置已保存，下次工具调用生效。";
     await refresh();
@@ -53,12 +46,9 @@ async function save() {
         <label>额外参数
           <input v-model="args" placeholder="例如 --skip-git-repo-check（非 git 目录）、-m 模型名" />
         </label>
-        <label>单次调用上限（秒）
-          <input v-model.number="timeout" type="number" min="1" max="86400" step="1" />
-        </label>
         <p class="ap-muted">
-          工具执行 <code>codex exec [额外参数] &lt;prompt&gt;</code>。本机装了 codex-cli 时可全部留空；
-          非零退出会保留退出码和 stderr，超过上限会停止整个进程树。
+          工具执行 <code>codex exec [额外参数] &lt;prompt&gt;</code>。本机装了 codex-cli 时可以全部留空；
+          非零退出会保留退出码和 stderr。单次调用上限在「时间与停止策略」里配置。
         </p>
         <div><button type="submit" class="ap-btn primary">{{ busy ? '保存中…' : '保存配置' }}</button></div>
       </fieldset>
