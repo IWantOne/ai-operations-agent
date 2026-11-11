@@ -1,0 +1,40 @@
+{
+  "tasks": [
+    {
+      "name": "A-单计划抢店铺",
+      "employee_key": "员工A",
+      "handler": "browser_demo",
+      "input": {
+        "shop_id": "27156808109149",
+        "work_seconds": 60,
+        "subprocess": true
+      },
+      "schedules": [
+        {
+          "key": "A-1",
+          "interval_seconds": 600
+        }
+      ]
+    },
+    {
+      "name": "B-双计划抢店铺",
+      "employee_key": "员工B",
+      "handler": "browser_demo",
+      "input": {
+        "shop_id": "27156808109149",
+        "work_seconds": 4,
+        "subprocess": true
+      },
+      "schedules": [
+        {
+          "key": "B-1",
+          "interval_seconds": 600
+        },
+        {
+          "key": "B-2",
+          "interval_seconds": 600
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+# Paths are relative to the project root. CLI options override these defaults.
+[database]
+type = "sqlite"
+path = "database/sqlite/unified.sqlite3"
+# For PostgreSQL set type = "postgresql" and set this environment variable.
+dsn_env = "AGENT_PLATFORM_DATABASE_URL"
+
+[service]
+port = 8765
+state_dir = "data"
+
+# Only this store may be opened by the service.
+[ziniao]
+store_id = "27156808109149"
+store_name = "VCC子账号-US"
