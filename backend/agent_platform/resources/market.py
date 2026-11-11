@@ -267,8 +267,12 @@ async def switch_market(ctx, shop, code, timeout):
     if not clicked:
         raise RuntimeError(f"账号切换器里没有找到 {CHINESE.get(code, code)} 的站点行；"
                            f"页面候选：{candidates[:12]}")
-    await ctx.sleep(1)
-    confirmed = await ctx.tool("browser.evaluate", shop=shop, expression=CONFIRM_JS)
+    confirmed = False
+    for _ in range(10):
+        confirmed = await ctx.tool("browser.evaluate", shop=shop, expression=CONFIRM_JS)
+        if confirmed:
+            break
+        await ctx.sleep(1)
     if confirmed:
         await ctx.tool("browser.real_click", shop=shop, selector="#dsh-market-confirm")
     deadline = asyncio.get_running_loop().time() + timeout
