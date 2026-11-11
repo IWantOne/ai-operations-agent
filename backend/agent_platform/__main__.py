@@ -16,7 +16,8 @@ from .settings.service_lock import database_lock
 async def serve(args, app_factory):
     from .api import start_panel
     store = Store(args.db)
-    connections = Connections(store, {args.store_id: args.store_name}, args.connection_file)
+    stores = {str(args.store_id): args.store_name} if args.store_id else {}
+    connections = Connections(store, stores, args.connection_file)
     browser = connections.browser
     manager, scheduler = app_factory(store, browser)
     manager.external_manifest = Path(args.config).resolve() if args.config else None
@@ -27,6 +28,10 @@ async def serve(args, app_factory):
     load_employee_tasks(manager)
     from .queueing.connections import register_connections
     register_connections(manager, connections)
+    try:
+        await connections.refresh()
+    except Exception as exc:
+        print(f"店铺池加载失败：{exc}", flush=True)
     await manager.recover()
     scheduler.skip_missed()
     shutdown = asyncio.Event()
@@ -66,10 +71,10 @@ def main(argv=None, *, app_factory=build_application):
             stores = config.get("ziniao", {})
             args.store_id = stores.get("store_id")
             args.store_name = stores.get("store_name")
-        if not (isinstance(args.store_id, str) and args.store_id.isdigit()
-                and isinstance(args.store_name, str) and args.store_name.strip()):
-            parser.error("请在 deploy/platform.toml 的 [ziniao] 中填写真实店铺 ID 和名称，"
-                         "或同时传入 --store-id 和 --store-name。")
+        if (args.store_id is None) != (args.store_name is None):
+            parser.error("--store-id 与 --store-name 必须同时提供")
+        if args.store_id is not None and (not str(args.store_id).isdigit() or not str(args.store_name).strip()):
+            parser.error("店铺 ID 必须是数字，店铺名称不能为空")
     if not args.db:
         args.db = database_target(config["database"])
     if args.command == "serve":

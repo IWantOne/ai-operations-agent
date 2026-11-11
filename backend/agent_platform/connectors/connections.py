@@ -20,7 +20,6 @@ class WebDriverBrowser(Browser):
     """通过本机 WebDriver HTTP 接口操作店铺窗口。
 
     与 CliBrowser 平级，共同继承 Browser 适配器基类。
-
     分层（见框架图）：
 
     - 传输层 request() 只调平台、只抛原始异常（ValueError 带 HTTP 码/正文），
@@ -106,6 +105,13 @@ class WebDriverBrowser(Browser):
         return await self._observe(action, **fields)
 
     async def verify(self):
+        await self.refresh_stores()
+        if not self.stores:
+            raise ConnectorError("紫鸟账户没有可用的店铺")
+        return dict(self.stores)
+
+    async def refresh_stores(self):
+        """店铺池以紫鸟账户的店铺列表为准，不再由部署参数写死。"""
         try:
             result = await self._observe("getBrowserList")
         except Exception as exc:
@@ -113,22 +119,25 @@ class WebDriverBrowser(Browser):
         rows = result.get("browserList")
         if not isinstance(rows, list):
             raise ConnectorError("客户端未返回有效的店铺列表。")
-        aliases = {}
-        for shop_id, name in self.stores.items():
-            matches = [r for r in rows if isinstance(r, dict) and r.get("browserName") == name
-                       and r.get("browserId") in (None, shop_id, int(shop_id)) and not r.get("isExpired")]
-            if len(matches) != 1 or not matches[0].get("browserOauth"):
-                raise ConnectorError("登录成功，但授权店铺未找到或名称不唯一。请核对账号及店铺授权。")
-            aliases[shop_id] = str(matches[0]["browserOauth"])
-        return aliases
+        stores = {}
+        for row in rows:
+            if not isinstance(row, dict) or row.get("isExpired"):
+                continue
+            shop_id = str(row.get("browserId") or "")
+            if shop_id:
+                stores[shop_id] = str(row.get("browserName") or shop_id)
+        self.stores.clear()
+        self.stores.update(stores)
+        return stores
+
+    async def _ensure_shop(self, shop_id):
+        if shop_id in self.stores:
+            return
+        await self.refresh_stores()
+        if shop_id not in self.stores:
+            raise ConnectorError(f"店铺 {shop_id} 不在紫鸟账户的 {len(self.stores)} 个店铺里")
 
     async def inspect(self, window_ref):
-        self._require_shop(window_ref)
-        try:
-            aliases = await self.verify()
-        except Exception as exc:
-            raise ConnectorError(f"窗口 {window_ref} 检查请求失败，远端结果不明：{exc}") from exc
-        ids = {window_ref, aliases[window_ref]}
         try:
             result = await self._observe("getRunningInfo")
         except Exception as exc:
@@ -140,12 +149,12 @@ class WebDriverBrowser(Browser):
             keys = (row.get("browserId"), row.get("browserOauth")) if isinstance(row, dict) else (row,)
             if not any(isinstance(k, (str, int)) and str(k) for k in keys):
                 raise ConnectorError(f"getRunningInfo 窗口记录缺少标识：{row!r}")
-            if any(str(k) in ids for k in keys):
+            if any(str(k) == str(window_ref) for k in keys if k not in (None, "")):
                 return True
         return False
 
     async def open(self, shop_id):
-        self._require_shop(shop_id)
+        await self._ensure_shop(shop_id)
         try:
             running = await self.inspect(shop_id)
         except Exception as exc:
@@ -171,7 +180,6 @@ class WebDriverBrowser(Browser):
         return shop_id
 
     async def close(self, window_ref):
-        self._require_shop(window_ref)
         try:
             running = await self.inspect(window_ref)
         except Exception as exc:
@@ -193,7 +201,6 @@ class WebDriverBrowser(Browser):
         self._record(ConnectorCode.CLOSED, {"operation": "close", "store_id": window_ref})
 
     async def find_windows(self, shop_id):
-        self._require_shop(shop_id)
         try:
             running = await self.inspect(shop_id)
         except Exception as exc:
@@ -201,7 +208,6 @@ class WebDriverBrowser(Browser):
         return [shop_id] if running else []
 
     async def debug_port(self, shop_id):
-        self._require_shop(shop_id)
         try:
             result = await self._observe("getRunningInfo")
         except Exception as exc:
@@ -236,6 +242,17 @@ class Connections:
 
     def summary(self):
         return {k: v for k, v in self.config.items() if k in ("mode", "company", "username", "port")}
+
+    async def refresh(self):
+        """把紫鸟账户当前可用的店铺读进店铺池。"""
+        browser = self.browser
+        refresh = getattr(browser, "refresh_stores", None)
+        if refresh is None:
+            return dict(self.stores)
+        await refresh()
+        self.stores.clear()
+        self.stores.update(browser.stores)
+        return dict(self.stores)
 
     async def account_overview(self):
         browser = self.browser
@@ -307,6 +324,8 @@ class Connections:
             browser = self.adapter(config)
             if mode == "webdriver":
                 await browser.verify()
+                self.stores.clear()
+                self.stores.update(browser.stores)
             else:
                 browser._command()
             if save:

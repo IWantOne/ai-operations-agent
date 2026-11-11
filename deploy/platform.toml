@@ -9,7 +9,8 @@ dsn_env = "AGENT_PLATFORM_DATABASE_URL"
 port = 8765
 state_dir = "data"
 
-# Only this store may be opened by the service.
-[ziniao]
-store_id = "27156808109149"
-store_name = "VCC子账号-US"
+# 店铺池以紫鸟账户的店铺列表为准，这里不再写死单个店铺。
+# 如需临时只允许一个店铺，取消下面两行注释并填写真实 ID 和名称。
+# [ziniao]
+# store_id = ""
+# store_name = ""

@@ -38,8 +38,10 @@ class ResourcePool:
             raise ValueError("shop_id is required")
         stores = getattr(self.browser, "stores", None)
         if isinstance(stores, dict):
+            if not stores:
+                raise ValueError("店铺池为空：请先在「API 设置」里配置紫鸟连接并刷新店铺列表")
             if shop_id not in stores:
-                raise ValueError("shop_id is outside the authorized allowlist")
+                raise ValueError(f"店铺 {shop_id} 不在紫鸟账户的 {len(stores)} 个店铺里")
         else:
             check = getattr(self.browser, "validate_shop", None)
             if callable(check):
