@@ -39,6 +39,18 @@ MARKET_CODES = {
     "A28R8C7NBKEWEA": "IE", "A17E79C6D8DWNP": "SA", "A2VIGQ35RCS4UG": "AE",
 }
 CODE_HOSTS = {code: MARKETS[mid] for mid, code in MARKET_CODES.items()}
+CODE_IDS = {code: mid for mid, code in MARKET_CODES.items()}
+
+CONFIRM_JS = r"""(()=>{const want=/选择账户|選取帳戶|select account/i;
+let found=false;
+const walk=root=>{for(const e of root.querySelectorAll('*')){
+ if(found)return;
+ if(!e.getClientRects||!e.getClientRects().length)continue;
+ const label=(e.getAttribute&&(e.getAttribute('label')||e.getAttribute('aria-label')))||'';
+ const text=(e.innerText||'').trim();
+ if(want.test(label+' '+text)){e.id='dsh-market-confirm';found=true;return;}
+ if(e.shadowRoot)walk(e.shadowRoot);}};walk(document);
+return found;})()"""
 
 # 页面头部国家标签 → 站点代码；中英文都认。
 NAME_CODES = {
@@ -130,8 +142,8 @@ if(!hits.length){
 }
 const hit=hits[hits.length-1];
 try{hit.scrollIntoView({block:'center'});}catch(e){}
-for(const type of ['pointerover','pointerdown','mousedown','pointerup','mouseup','click']){
- hit.dispatchEvent(new MouseEvent(type,{bubbles:true,cancelable:true,composed:true,view:window}));}
+const button=hit.closest('button')||hit;
+button.id='dsh-market-row';
 return JSON.stringify({clicked:true,text:norm(hit.innerText).slice(0,60)});})()"""
 
 ENGLISH = {"US": "United States", "CA": "Canada", "MX": "Mexico", "UK": "United Kingdom",           "DE": "Germany", "FR": "France", "IT": "Italy", "ES": "Spain", "NL": "Netherlands",
@@ -227,6 +239,7 @@ async def switch_market(ctx, shop, code, timeout):
     if not host.startswith("sellercentral."):
         raise RuntimeError(f"当前页面不是 Seller Central（{host or '未知域名'}），无法切换站点")
     await ctx.tool("browser.goto", shop=shop, url=f"https://{host}{SWITCHER_PATH}")
+    await ctx.sleep(4)
     deadline = asyncio.get_running_loop().time() + timeout
     clicked = None
     expanded = 0
@@ -239,29 +252,35 @@ async def switch_market(ctx, shop, code, timeout):
         data = json.loads(result) if isinstance(result, str) else {}
         candidates = data.get("rows") or candidates
         if data.get("clicked"):
+            await ctx.tool("browser.real_click", shop=shop, selector="#dsh-market-row")
             clicked = data.get("text")
             break
-        # 先找行；找不到才点一次账号卡片展开。反过来会把已经展开的卡片又收起来。
+        # 列表通常自己展开；等不到时才点一次账号卡片。
         if expanded < 1:
+            expanded += 1
             state = await read(ctx, shop)
             if state.get("accountCard"):
-                expanded += 1
-                await _click(ctx, shop, state["accountCard"])
-                await ctx.sleep(2)
+                await ctx.tool("browser.real_click", shop=shop, selector=state["accountCard"])
+                await ctx.sleep(3)
                 continue
         await ctx.sleep(2)
     if not clicked:
         raise RuntimeError(f"账号切换器里没有找到 {CHINESE.get(code, code)} 的站点行；"
                            f"页面候选：{candidates[:12]}")
     await ctx.sleep(1)
-    await _click_text(ctx, shop, ["選取帳戶", "选取账户", "Select account", "Continue", "继续"])
+    confirmed = await ctx.tool("browser.evaluate", shop=shop, expression=CONFIRM_JS)
+    if confirmed:
+        await ctx.tool("browser.real_click", shop=shop, selector="#dsh-market-confirm")
     deadline = asyncio.get_running_loop().time() + timeout
+    market_id = CODE_IDS.get(code, "")
     while asyncio.get_running_loop().time() < deadline:
         await ctx.sleep(2)
         state = await read(ctx, shop)
+        if market_id and market_id in str(state.get("loginHref") or ""):
+            return {"ok": True, "url": state.get("loginHref"), "clicked": clicked}
         if state.get("gate") == "LOGGED_IN" and code_for_country(state.get("countryText")) == code:
             return {"ok": True, "countryText": state.get("countryText"), "clicked": clicked}
-    raise RuntimeError(f"点了 {CHINESE.get(code, code)} 的站点行，但页面头部国家没有变成目标站点")
+    raise RuntimeError(f"点了 {CHINESE.get(code, code)} 的站点行，但页面没有切过去")
 
 
 async def prepare(ctx, shop, marketplace_id, timeout):

@@ -228,6 +228,13 @@ class CDP:
             raise CDPError(value["errorCode"])
         return value
 
+    def click_at(self, x, y):
+        """真实鼠标点击：页面只认 Input 事件，不认 DOM 派发的 click。"""
+        for kind, buttons in (("mouseMoved", 0), ("mousePressed", 1), ("mouseReleased", 0)):
+            self.call("Input.dispatchMouseEvent", type=kind, x=x, y=y, button="left",
+                      buttons=buttons, clickCount=1)
+        return {"clicked": True, "x": x, "y": y}
+
     def screenshot(self, path):
         result = self.call("Page.captureScreenshot", format="png")
         data = base64.b64decode(result["data"])

@@ -6,6 +6,7 @@
 - 超时取 settings/timing.py 的 browser_timeout_seconds。
 """
 import asyncio
+import json
 import re
 import time
 from pathlib import Path
@@ -57,6 +58,20 @@ def register_browser(manager):
     async def fill(shop, selector, text):
         return await _run(manager, shop, lambda cdp: cdp.fill(selector, text))
 
+    async def real_click(shop, selector):
+        """按真实鼠标事件点击元素（页面只认 Input 事件时用）。"""
+        def action(cdp):
+            script = ("(()=>{const e=document.querySelector(%s);if(!e)return null;"
+                      "e.scrollIntoView({block:'center'});"
+                      "const r=e.getBoundingClientRect();"
+                      "return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)};})()"
+                      % json.dumps(selector))
+            point = cdp.evaluate(script)
+            if not point:
+                raise RuntimeError(f"找不到元素：{selector}")
+            return cdp.click_at(point["x"], point["y"])
+        return await _run(manager, shop, action)
+
     async def screenshot(shop, label="page"):
         def action(cdp):
             EVIDENCE.mkdir(parents=True, exist_ok=True)
@@ -70,4 +85,5 @@ def register_browser(manager):
     manager.tools.register("browser.evaluate", evaluate)
     manager.tools.register("browser.click", click)
     manager.tools.register("browser.fill", fill)
+    manager.tools.register("browser.real_click", real_click)
     manager.tools.register("browser.screenshot", screenshot)
