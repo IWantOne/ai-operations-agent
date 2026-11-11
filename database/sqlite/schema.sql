@@ -191,3 +191,13 @@ CREATE TABLE IF NOT EXISTS feedback_case (
 );
 
 CREATE INDEX IF NOT EXISTS feedback_case_status ON feedback_case(status, updated_at);
+
+CREATE TABLE IF NOT EXISTS store_info (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    shop_id TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL DEFAULT '',
+    platform TEXT NOT NULL DEFAULT '',
+    account TEXT NOT NULL DEFAULT '',
+    expired INTEGER NOT NULL DEFAULT 0,
+    seen_at REAL NOT NULL
+);

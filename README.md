@@ -4,7 +4,7 @@ Python 后端负责业务、任务调度和资源管理。Vue 前端按设计包
 
 ## 启动
 
-双击 `deploy/start.bat`，或在项目根目录执行 `.\deploy\start.ps1`。默认启动 Vite 热更新前端和 Python 后端，仅在缺少前端依赖时安装，不执行前端构建。打开 http://127.0.0.1:5173 ，修改 Vue 文件会自动更新页面。后端默认使用 8765 端口，前端代理跟随 `deploy/platform.toml` 或启动参数 `--port`。5173 被占用时会报错，不会切换到其他端口。涉及店铺的操作使用真实紫鸟；当前配置的店铺是 VCC子账号-US（27156808109149）。
+双击 `deploy/start.bat`，或在项目根目录执行 `.\deploy\start.ps1`。默认启动 Vite 热更新前端和 Python 后端，仅在缺少前端依赖时安装，不执行前端构建。打开 http://127.0.0.1:5173 ，修改 Vue 文件会自动更新页面。后端默认使用 8765 端口，可用启动参数 `--port` 指定。5173 被占用时会报错，不会切换到其他端口。涉及店铺的操作使用真实紫鸟；店铺池来自紫鸟账户的店铺列表，不需要在部署文件里写死店铺。
 
 `start.bat` / `start.ps1` 是整个工作台的启动／重启入口：未运行时启动前后端；已运行时，再次双击会请求当前配置端口上的后端正常停止，等待后端进程完成清理及旧前端退出，然后重新启动前后端。不会强杀占用端口的其他程序；停止失败或等待超时会报错并终止本次重启。
 
@@ -64,7 +64,7 @@ backend/agent_platform/
 
 当前默认数据库为 `database/sqlite/unified.sqlite3`，首次启动创建。旧 `database/sqlite/local.sqlite3` 未删除、不迁移；新代码会拒绝混用旧调度结构。当前系统尚未投用，采用新结构直接开发，原开发库中的运行记录和数据库配置不会自动带入新库。
 
-部署参数在 `deploy/platform.toml`。可通过 `serve --db` 指定独立 SQLite 文件。使用 PostgreSQL 需安装 `python -m pip install -e ".[postgres]"`，修改部署配置并设置 `AGENT_PLATFORM_DATABASE_URL`；该适配器尚未实连验证。
+没有部署配置文件：数据库默认 `database/sqlite/unified.sqlite3`、端口默认 8765、状态目录默认 `data/`，都可用启动参数覆盖（`--db`、`--port`）。使用 PostgreSQL 需安装 `python -m pip install -e ".[postgres]"`，用 `--db` 传连接串并设置 `AGENT_PLATFORM_DATABASE_URL`；该适配器尚未实连验证。
 
 统一重试设置保存在 `queue.retry`，字段为 `enabled`、`total_retries`。默认关闭。任务从头重跑必须明确声明 `restart_safe=True`，工具重试也须声明安全；未声明默认不重放。开窗重试必须有明确未产生副作用的声明，并核验窗口确实未打开。关闭或检查结果不明时保留原始错误供核验。
 

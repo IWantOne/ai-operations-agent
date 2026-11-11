@@ -244,36 +244,56 @@ class Connections:
         return {k: v for k, v in self.config.items() if k in ("mode", "company", "username", "port")}
 
     async def refresh(self):
-        """把紫鸟账户当前可用的店铺读进店铺池。"""
-        browser = self.browser
-        refresh = getattr(browser, "refresh_stores", None)
-        if refresh is None:
+        if getattr(self.browser, "query", None) is None:
             return dict(self.stores)
-        await refresh()
+        return await self.sync_stores()
+
+    def load_stores(self):
+        """店铺池从数据库读；数据库由紫鸟账户列表同步。"""
+        rows = self.store.all("SELECT shop_id, name FROM store_info WHERE expired=0 ORDER BY id")
         self.stores.clear()
-        self.stores.update(browser.stores)
+        self.stores.update({row["shop_id"]: row["name"] for row in rows})
+        self.browser.stores = dict(self.stores)
         return dict(self.stores)
 
+    async def sync_stores(self):
+        """从紫鸟账户拉店铺列表并写库；失败时保留上次结果。"""
+        reply = await self.browser.query("getBrowserList")
+        if isinstance(reply, tuple):
+            reply = reply[0]
+        rows = reply.get("browserList") if isinstance(reply, dict) else None
+        if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+            raise ValueError("紫鸟返回的店铺列表格式无效。")
+        now = time.time()
+        with self.store.transaction():
+            for row in rows:
+                shop_id = str(row.get("browserId") or "")
+                if not shop_id:
+                    continue
+                fields = {"shop_id": shop_id,
+                          "name": str(row.get("browserName") or shop_id),
+                          "platform": str(row.get("platform_name") or ""),
+                          "account": str(row.get("store_username") or ""),
+                          "expired": 1 if row.get("isExpired") else 0,
+                          "seen_at": now}
+                existing = self.store.one("SELECT id FROM store_info WHERE shop_id=?", (shop_id,))
+                if existing:
+                    self.store.update("store_info", existing["id"], **fields)
+                else:
+                    self.store.insert("store_info", fields)
+        return self.load_stores()
+
     async def account_overview(self):
-        browser = self.browser
         account = self.summary()
         if account["mode"] != "webdriver":
             raise ValueError("账户店铺概览当前支持 WebDriver 连接。请在 API 设置中配置账号。")
-        # 只读查询仍走适配器的证据落库路径；原始异常由本层收敛为面向界面的 ValueError。
-        shops_reply, running_reply = await asyncio.gather(
-            browser.query("getBrowserList"),
-            browser.query("getRunningInfo"),
-            return_exceptions=True,
-        )
-        if isinstance(shops_reply, BaseException):
-            raise ValueError("读取账户店铺失败：" + exception_details(shops_reply)["error"]) from shops_reply
-        if isinstance(shops_reply, tuple):
-            shops_reply = shops_reply[0]
+        try:
+            await self.sync_stores()
+        except Exception as exc:
+            raise ValueError("读取账户店铺失败：" + exception_details(exc)["error"]) from exc
+        running_reply = await self.browser.query("getRunningInfo")
         if isinstance(running_reply, tuple):
             running_reply = running_reply[0]
-        shops = shops_reply.get("browserList")
-        if not isinstance(shops, list) or any(not isinstance(row, dict) for row in shops):
-            raise ValueError("紫鸟返回的店铺列表格式无效。")
         running_ids = set()
         window_error = ""
         windows = running_reply.get("browsers") if isinstance(running_reply, dict) else None
@@ -285,22 +305,19 @@ class Connections:
                     window_error = "部分窗口无法识别，窗口状态待核验。"
                 running_ids.update(identifiers)
         else:
-            window_error = ("窗口状态读取失败：" + exception_details(running_reply)["error"]
-                            if isinstance(running_reply, BaseException) else f"窗口状态返回格式无效：{running_reply!r}")
+            window_error = f"窗口状态返回格式无效：{running_reply!r}"
         rows = []
-        for row in shops:
-            shop_id = str(row.get("browserId") or "")
-            identifiers = {shop_id, str(row.get("browserOauth") or "")} - {""}
-            opened = bool(identifiers & running_ids)
+        for row in self.store.all("SELECT * FROM store_info ORDER BY id"):
+            opened = row["shop_id"] in running_ids
             rows.append({
                 "provider": "ziniao",
-                "id": shop_id or str(row.get("browserOauth") or ""),
-                "name": row.get("browserName") or shop_id or "未命名店铺",
-                "platform": row.get("platform_name") or "未提供",
-                "account": row.get("store_username") or "",
-                "expired": row.get("isExpired") if type(row.get("isExpired")) is bool else None,
+                "id": row["shop_id"],
+                "name": row["name"] or row["shop_id"],
+                "platform": row["platform"] or "未提供",
+                "account": row["account"] or "",
+                "expired": bool(row["expired"]),
                 "running": True if opened else None if window_error else False,
-                "task_authorized": shop_id in self.stores,
+                "task_authorized": row["shop_id"] in self.stores,
             })
         return {"account": {key: account.get(key) for key in ("company", "username", "mode")},
                 "shops": rows, "window_error": window_error, "fetched_at": time.time()}
@@ -347,4 +364,6 @@ class Connections:
                             os.unlink(tmp)
                 self.config, self.browser = config, browser
                 manager.pool.browser = browser
+                if mode == "webdriver":
+                    await self.sync_stores()
             return {"connection": self.summary()}

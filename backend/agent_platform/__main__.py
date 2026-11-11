@@ -31,7 +31,8 @@ async def serve(args, app_factory):
     try:
         await connections.refresh()
     except Exception as exc:
-        print(f"店铺池加载失败：{exc}", flush=True)
+        connections.load_stores()
+        print(f"店铺列表刷新失败，使用上次同步结果：{exc}", flush=True)
     await manager.recover()
     scheduler.skip_missed()
     shutdown = asyncio.Event()
