@@ -1,14 +1,63 @@
-"""Seller Central 登录与站点切换：读页面状态、等紫鸟自动登录、切到目标站点。
+"""紫鸟窗口里的 Seller Central：读页面状态、等自动登录、切到目标站点。
 
-移植自旧项目 scripts/ziniao_marketplace.py 的核心部分，只保留差评用得到的三块：
+属于资源池能力：窗口打开后由这里把店铺带到目标站点，业务层只负责调用。
+移植自旧项目 scripts/ziniao_marketplace.py 的核心，只保留平台用得到的三块：
 - 读页面：登录墙 / 验证码 / 反爬、头部可见国家
 - 等登录：紫鸟自动填账号密码时点掉提交；保存账号卡片可点时点它；验证码由紫鸟填
-- 切站点：在店铺当前域名上打开账号切换器，点目标国家行，再回读头部国家确认
+- 切站点：在店铺当前域名上打开账号切换器，展开账号卡片，点目标国家行，再回读头部国家确认
 """
 import asyncio
 import json
 
-from .bindings import CODE_HOSTS, MARKET_CODES, code_for_country
+MARKETS = {
+    "ATVPDKIKX0DER": "sellercentral.amazon.com",
+    "A2EUQ1WTGCTBG2": "sellercentral.amazon.ca",
+    "A1AM78C64UM0Y8": "sellercentral.amazon.com.mx",
+    "A1F83G8C2ARO7P": "sellercentral.amazon.co.uk",
+    "A1PA6795UKMFR9": "sellercentral.amazon.de",
+    "A13V1IB3VIYZZH": "sellercentral.amazon.fr",
+    "APJ6JRA9NG5V4": "sellercentral.amazon.it",
+    "A1RKKUPIHCS9HS": "sellercentral.amazon.es",
+    "A1805IZSGTT6HS": "sellercentral.amazon.nl",
+    "A2NODRKZP88ZB9": "sellercentral.amazon.se",
+    "A1C3SOZRARQ6R3": "sellercentral.amazon.pl",
+    "AMEN7PMS3EDWL": "sellercentral.amazon.com.be",
+    "A33AVAJ2PDY3EV": "sellercentral.amazon.com.tr",
+    "A2Q3Y263D00KWC": "sellercentral.amazon.com",
+    "A1VC38T7YXB528": "sellercentral.amazon.co.jp",
+    "A28R8C7NBKEWEA": "sellercentral.amazon.ie",
+    "A17E79C6D8DWNP": "sellercentral.amazon.sa",
+    "A2VIGQ35RCS4UG": "sellercentral.amazon.ae",
+}
+
+MARKET_CODES = {
+    "ATVPDKIKX0DER": "US", "A2EUQ1WTGCTBG2": "CA", "A1AM78C64UM0Y8": "MX",
+    "A1F83G8C2ARO7P": "UK", "A1PA6795UKMFR9": "DE", "A13V1IB3VIYZZH": "FR",
+    "APJ6JRA9NG5V4": "IT", "A1RKKUPIHCS9HS": "ES", "A1805IZSGTT6HS": "NL",
+    "A2NODRKZP88ZB9": "SE", "A1C3SOZRARQ6R3": "PL", "AMEN7PMS3EDWL": "BE",
+    "A33AVAJ2PDY3EV": "TR", "A2Q3Y263D00KWC": "BR", "A1VC38T7YXB528": "JP",
+    "A28R8C7NBKEWEA": "IE", "A17E79C6D8DWNP": "SA", "A2VIGQ35RCS4UG": "AE",
+}
+CODE_HOSTS = {code: MARKETS[mid] for mid, code in MARKET_CODES.items()}
+
+# 页面头部国家标签 → 站点代码；中英文都认。
+NAME_CODES = {
+    "美国": "US", "united states": "US", "加拿大": "CA", "canada": "CA",
+    "墨西哥": "MX", "mexico": "MX", "英国": "UK", "united kingdom": "UK", "great britain": "UK",
+    "德国": "DE", "germany": "DE", "法国": "FR", "france": "FR", "意大利": "IT", "italy": "IT",
+    "西班牙": "ES", "spain": "ES", "荷兰": "NL", "netherlands": "NL", "瑞典": "SE", "sweden": "SE",
+    "波兰": "PL", "poland": "PL", "比利时": "BE", "belgium": "BE", "土耳其": "TR", "turkey": "TR",
+    "巴西": "BR", "brazil": "BR", "日本": "JP", "japan": "JP", "爱尔兰": "IE", "ireland": "IE",
+    "沙特阿拉伯": "SA", "saudi arabia": "SA", "阿拉伯联合酋长国": "AE", "united arab emirates": "AE",
+}
+
+
+def code_for_country(text):
+    return NAME_CODES.get(str(text or "").strip().lower())
+
+
+def host_for(marketplace_id):
+    return MARKETS.get(str(marketplace_id))
 
 STATE_JS = r"""(()=>{
 const q=s=>document.querySelector(s);

@@ -7,7 +7,8 @@ import time
 
 from .bindings import REQUEST_LABELS, load_bindings, url_for
 from .cases import judge
-from . import apply, market, pages
+from . import apply, pages
+from ...resources import market
 
 
 def register(manager):
