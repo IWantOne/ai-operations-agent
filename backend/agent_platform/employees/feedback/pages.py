@@ -165,18 +165,24 @@ async def find_order(ctx, shop, order_id, max_pages=5):
 
 
 async def open_menu(ctx, shop, order_id):
-    """展开订单行的操作菜单；展开开关只认真实鼠标点击。"""
-    point = await ctx.tool("browser.evaluate", shop=shop,
-                           expression=MENU_TOGGLE_JS.replace("__ORDER__", json.dumps(order_id)))
-    if not isinstance(point, dict) or point.get("x") is None:
-        raise RuntimeError(f"订单 {order_id} 的操作菜单没有找到："
-                           f"{(point or {}).get('error', '未知原因')}")
-    if not point.get("onScreen"):
-        raise RuntimeError(f"订单 {order_id} 的操作菜单不在可视区域内")
-    await ctx.tool("browser.click_point", shop=shop, x=point["x"], y=point["y"])
-    await ctx.sleep(1)
-    return await ctx.tool("browser.evaluate", shop=shop,
-                          expression=MENU_READ.replace("__ORDER__", json.dumps(order_id)))
+    """展开订单行的操作菜单；展开开关只认真实鼠标点击，没展开就再点一次。"""
+    for _ in range(3):
+        point = await ctx.tool("browser.evaluate", shop=shop,
+                               expression=MENU_TOGGLE_JS.replace("__ORDER__", json.dumps(order_id)))
+        if not isinstance(point, dict) or point.get("x") is None:
+            raise RuntimeError(f"订单 {order_id} 的操作菜单没有找到："
+                               f"{(point or {}).get('error', '未知原因')}")
+        if not point.get("onScreen"):
+            raise RuntimeError(f"订单 {order_id} 的操作菜单不在可视区域内")
+        await ctx.tool("browser.click_point", shop=shop, x=point["x"], y=point["y"])
+        for _ in range(6):
+            await ctx.sleep(0.5)
+            menu = await ctx.tool("browser.evaluate", shop=shop,
+                                  expression=MENU_READ.replace("__ORDER__", json.dumps(order_id)))
+            if (menu or {}).get("expanded") == "true" or any(
+                    item.get("visible") for item in (menu or {}).get("items", [])):
+                return menu
+    raise RuntimeError(f"订单 {order_id} 的操作菜单点开后没有展开")
 
 
 async def menu_action_point(ctx, shop, order_id, action):

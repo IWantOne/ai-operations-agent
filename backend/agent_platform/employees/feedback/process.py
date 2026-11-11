@@ -116,10 +116,12 @@ def register(manager):
                             result, reason, extra = await apply.run(ctx, shop, case["order_id"])
                             evidence.update(extra)
                             mark(case, result, reason, evidence)
-                            counts[{"SUBMITTED": "submitted", "MANUAL": "manual"}.get(result, "kept")] += 1
+                            counts[{"SUBMITTED": "submitted", "MANUAL": "manual",
+                                    "REMOVED": "removed", "REJECTED": "kept"}.get(result, "kept")] += 1
                         else:
-                            mark(case, "NEW", "操作菜单里没有可点的“请求审核”，页面文本已记录", evidence)
-                            counts["kept"] += 1
+                            mark(case, "MANUAL",
+                                 "操作菜单里没有可点的“请求审核”（可能已审核过），页面文本已记录", evidence)
+                            counts["manual"] += 1
                     except Exception as exc:
                         mark(case, "MANUAL", f"打开申请菜单失败：{exc}", evidence)
                         await capture(ctx, shop, case, f"feedback-menu-{case['order_id']}", evidence)

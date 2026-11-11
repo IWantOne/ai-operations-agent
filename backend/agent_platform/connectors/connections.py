@@ -179,7 +179,7 @@ class WebDriverBrowser(Browser):
                           "reason": "开窗前窗口已在运行，不接管也不关闭"}, level="WARNING")
             raise Foreign(f"店铺 {shop_id} 窗口已在运行，归属未经工作台确认，拒绝接管")
         try:
-            result = await self._observe("startBrowser", browserId=shop_id)
+            result = await self._observe("startBrowser", browserId=shop_id, isHeadless=True)
         except Exception as exc:
             raise ConnectorError(f"店铺 {shop_id} 开窗请求失败，远端结果不明：{exc}") from exc
         if not result.get("debuggingPort"):

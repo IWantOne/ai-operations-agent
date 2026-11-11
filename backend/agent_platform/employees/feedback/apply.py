@@ -9,6 +9,10 @@ import re
 from . import pages
 
 CASE_ID = re.compile(r"(?:case|caseId|case_id)[^0-9A-Za-z]{0,3}([0-9]{6,})", re.IGNORECASE)
+# 入口请求被接受后，亚马逊会直接给出审核结论：保留（不删除）或已删除。
+KEPT_MARKERS = ("已审核此反馈", "审核此反馈", "已保留", "没有违反", "未违反",
+                "not violate", "has been retained")
+REMOVED_MARKERS = ("已删除此反馈", "已移除此反馈", "反馈已被删除", "已被移除")
 REASON_LABELS = ("商品回饋", "商品反馈", "與商品有關", "与商品有关", "商品相關", "商品相关",
                  "product review", "product feedback", "商品に関する")
 CONTINUE_LABELS = ("繼續", "继续", "continue", "next", "下一步", "次の")
@@ -53,11 +57,24 @@ async def run(ctx, shop, order_id):
     if not status:
         return "MANUAL", "点了“请求审核”，但没有观察到亚马逊的审核入口请求，未提交申请", evidence
 
+    # 入口被接受后，页面会直接给出审核结论；也可能继续进入理由页。轮询等它落定。
     page = await _page(ctx, shop)
-    case_id = _case_id(page)
-    if case_id:
-        evidence["case_id"] = case_id
-        return "SUBMITTED", f"已提交，Case {case_id}", evidence
+    for _ in range(15):
+        case_id = _case_id(page)
+        if case_id:
+            evidence["case_id"] = case_id
+            return "SUBMITTED", f"已提交，Case {case_id}", evidence
+        text = str(page.get("text") or "")
+        if any(marker in text for marker in KEPT_MARKERS):
+            evidence["page_text"] = text[:3000]
+            evidence["url"] = page.get("url")
+            return "REJECTED", "亚马逊审核后保留反馈（未移除）", evidence
+        if any(marker in text for marker in REMOVED_MARKERS):
+            evidence["page_text"] = text[:3000]
+            evidence["url"] = page.get("url")
+            return "REMOVED", "亚马逊已移除该反馈", evidence
+        await ctx.sleep(1)
+        page = await _page(ctx, shop)
 
     for step, labels in (("商品反馈", REASON_LABELS), ("继续", CONTINUE_LABELS),
                          ("提交", SUBMIT_LABELS)):
