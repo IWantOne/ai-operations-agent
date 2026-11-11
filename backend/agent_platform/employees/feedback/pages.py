@@ -95,23 +95,21 @@ const out=[];const walk=root=>{for(const e of root.querySelectorAll('*')){
  if(e.shadowRoot)walk(e.shadowRoot);}};walk(document);return out.slice(0,5);})()"""
 
 
-NEXT_PAGE = r"""(()=>{
-const labels=['next page','next','下一页','下一頁','次へ'];
-const walk=root=>{const out=[];const visit=r=>{for(const e of r.querySelectorAll('*')){
- const role=e.getAttribute&&e.getAttribute('role');
- const aria=(e.getAttribute&&(e.getAttribute('aria-label')||''))+' '+(e.getAttribute&&(e.getAttribute('title')||''));
+NEXT_PAGE = r"""(()=>{const want=/^(下一个|下一個|下一頁|下一页|next|次へ)(\s*>?)?$/i;
+const nodes=[...document.querySelectorAll('kat-link,button,a,[role=button],[role=link]')];
+for(const e of nodes){
+ const label=(e.getAttribute('label')||e.getAttribute('aria-label')||'').trim();
  const text=(e.innerText||'').trim();
- const button=/^(BUTTON|A)$/.test(e.tagName)||role==='button'||role==='link';
- if(button&&((aria&&labels.some(l=>aria.toLowerCase().includes(l)))||(text&&labels.some(l=>text.toLowerCase()===l)))) out.push(e);
- if(e.shadowRoot)visit(e.shadowRoot);
-}};visit(root);return out;};
-const buttons=walk(document).filter(e=>!(e.disabled||e.hasAttribute('disabled')));
-if(!buttons.length)return JSON.stringify({clicked:false,found:walk(document).length});
-const button=buttons[buttons.length-1];
-for(const type of ['pointerover','pointerdown','mousedown','pointerup','mouseup','click']){
- button.dispatchEvent(new MouseEvent(type,{bubbles:true,cancelable:true,composed:true,view:window}));
+ if(!want.test(label)&&!want.test(text))continue;
+ if(/disabled/i.test(String(e.className)))continue;
+ const r=e.getBoundingClientRect();
+ if(!r.width||!r.height)continue;
+ e.scrollIntoView({block:'center'});
+ const rr=e.getBoundingClientRect();
+ return {x:Math.round(rr.x+rr.width/2),y:Math.round(rr.y+rr.height/2),
+  text:(label||text).slice(0,30)};
 }
-return JSON.stringify({clicked:true});})()"""
+return null;})()"""
 
 
 def page_kind(state):
@@ -153,12 +151,9 @@ async def find_order(ctx, shop, order_id, max_pages=5):
         if state.get("rows") or page_kind(state) != "feedback":
             return state, trail
         moved = await ctx.tool("browser.evaluate", shop=shop, expression=NEXT_PAGE)
-        try:
-            clicked = json.loads(moved).get("clicked") if isinstance(moved, str) else False
-        except ValueError:
-            clicked = False
-        if not clicked:
+        if not isinstance(moved, dict) or moved.get("x") is None:
             return state, trail
+        await ctx.tool("browser.click_point", shop=shop, x=moved["x"], y=moved["y"])
         await ctx.sleep(2)
         state = await read_row(ctx, shop, order_id)
     return state, trail
