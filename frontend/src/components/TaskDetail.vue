@@ -72,6 +72,16 @@ const tone = (row) =>
     : ["FAILED", "TIMEOUT", "NEEDS_REVIEW", "CANCELLED"].includes(row.status) ? "failed"
       : active(row) ? "running" : "queued";
 const time = (seconds) => (seconds == null ? "—" : stamp(seconds).slice(-8));
+
+const CASE_LABELS = { NEW: "待处理", MANUAL: "需人工", SUBMITTED: "已提交", REMOVED: "已移除", REJECTED: "审核后保留" };
+const caseTone = (status) =>
+  status === "REMOVED" || status === "SUBMITTED" ? "done" : status === "REJECTED" ? "running" : "failed";
+const cases = computed(() => props.task.employee_key === "feedback" ? (state.value.cases || []) : []);
+const caseCounts = computed(() => {
+  const counts = {};
+  for (const item of cases.value) counts[item.status] = (counts[item.status] || 0) + 1;
+  return Object.entries(counts).map(([status, n]) => `${CASE_LABELS[status] || status} ${n}`).join(" · ");
+});
 </script>
 <template>
   <div class="ap-inlineexecution">
@@ -154,6 +164,27 @@ const time = (seconds) => (seconds == null ? "—" : stamp(seconds).slice(-8));
         </div>
       </article>
     </div>
+    <div v-if="cases.length" class="ap-cases">
+      <div class="ap-caseshead">
+        <h2>差评明细</h2>
+        <span class="ap-muted">{{ caseCounts }}</span>
+      </div>
+      <table class="ap-case-table">
+        <thead>
+          <tr><th>订单</th><th>店铺</th><th>星级</th><th>状态</th><th>原因</th><th>更新时间</th></tr>
+        </thead>
+        <tbody>
+          <tr v-for="c in cases" :key="c.id">
+            <td>{{ c.order_id }}</td>
+            <td>{{ c.store_name || c.sid }}<small v-if="c.marketplace_id"> · {{ c.marketplace_id }}</small></td>
+            <td>{{ c.rating }}★</td>
+            <td><span :class="['ap-badge', caseTone(c.status)]">{{ CASE_LABELS[c.status] || c.status }}</span></td>
+            <td class="ap-case-reason">{{ c.reason || "—" }}</td>
+            <td class="ap-case-time">{{ time(c.updated_at) }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 </template>
 
@@ -170,6 +201,14 @@ const time = (seconds) => (seconds == null ? "—" : stamp(seconds).slice(-8));
 .ap-execbody {padding:4px 14px 14px;border-top:1px solid var(--ap-line)}
 .ap-tech {margin-top:12px}
 .ap-tech summary {cursor:pointer;color:var(--ap-muted);font-size:13px}
+.ap-cases {margin-top:18px}
+.ap-caseshead {display:flex;align-items:baseline;gap:12px}
+.ap-caseshead h2 {margin:0}
+.ap-case-table {width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+.ap-case-table th {text-align:left;color:var(--ap-muted);font-weight:500;padding:6px 8px;border-bottom:1px solid var(--ap-line)}
+.ap-case-table td {padding:6px 8px;border-bottom:1px solid var(--ap-line);vertical-align:top}
+.ap-case-reason {max-width:520px;overflow-wrap:anywhere}
+.ap-case-time {color:var(--ap-muted);font-variant-numeric:tabular-nums;white-space:nowrap}
 @media (max-width: 720px) {
   .ap-exechead {grid-template-columns:56px 74px 1fr auto}
   .ap-execsecs,.ap-execid {display:none}
