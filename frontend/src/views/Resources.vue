@@ -10,7 +10,7 @@ const activeLease = (resource) =>
   state.value.leases.find(
     (l) =>
       l.resource_id === resource.id &&
-      ["ACTIVE", "OPENING", "CLOSING", "UNKNOWN"].includes(l.status),
+      ["ACTIVE", "OPENING", "CLOSING"].includes(l.status),
   );
 const taskFor = (row) => {
   const taskId =
@@ -19,13 +19,12 @@ const taskFor = (row) => {
   return state.value.tasks.find((t) => t.id === taskId);
 };
 const employeeName = (key) => state.value.employees?.find((employee) => employee.key === key)?.name || key;
-const leases = {ACTIVE:"使用中", RELEASED:"已归还", FAILED:"失败", CANCELLED:"已取消"};
+const leases = {OPENING:"申请中", ACTIVE:"使用中", CLOSING:"回收中", RETURNED:"已归还", FAILED:"失败"};
 const names = {
   CLOSED: "已关闭",
   OPEN: "使用中",
   OPENING: "打开中",
   CLOSING: "回收中",
-  UNKNOWN: "操作未完成，见失败原因",
 };
 const queues = computed(() => ({
   窗口申请队列: state.value.requests.filter(r=>r.kind==="ziniao.acquire" && ["QUEUED","RETRY_WAIT"].includes(r.status)).map(r=>({...r,shop_id:JSON.parse(r.run_input).shop_id})),
@@ -64,12 +63,12 @@ const queues = computed(() => ({
       <span
         :class="[
           'ap-badge',
-          r.blocked ? 'failed' : r.status === 'CLOSED' ? 'idle' : 'running',
+          r.status === 'CLOSED' ? 'idle' : r.status === 'CLOSING' ? 'failed' : 'running',
         ]"
-        >{{ r.blocked ? "资源已停用，见失败原因" : names[r.status] || r.status }}</span
+        >{{ names[r.status] || r.status }}</span
       >
     </div>
-    <div v-if="activeLease(r) && r.blocked" class="ap-actions">
+    <div v-if="activeLease(r) && activeLease(r).status === 'CLOSING'" class="ap-actions">
       <button class="ap-btn" :disabled="busy" @click="action('inspect_window',activeLease(r).id)">核验是否已关闭</button>
       <button class="ap-btn" :disabled="busy" @click="action('release_window',activeLease(r).id)">尝试关闭并核验</button>
     </div>

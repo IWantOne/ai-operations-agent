@@ -18,7 +18,7 @@ const rows = computed(() => {
       String(value || "").toLocaleLowerCase().includes(keyword)))
     .sort((a,b) => priority[taskStage(a)] - priority[taskStage(b)] || b.id - a.id);
 });
-const blocked = computed(() => state.value.resources.filter(r => r.blocked || r.status === "UNKNOWN").length);
+const reclaiming = computed(() => state.value.resources.filter(r => r.status === "CLOSING").length);
 const waiting = computed(() => state.value.requests.filter(r => r.kind === "ziniao.acquire" && ["QUEUED","RETRY_WAIT"].includes(r.status)).length);
 function reset() { term.value = ""; selected.value = "all"; }
 </script>
@@ -47,7 +47,7 @@ function reset() { term.value = ""; selected.value = "all"; }
       <h2>紫鸟窗口</h2>
       <div class="window-count"><b>{{ state.resources.filter(r => r.status !== 'CLOSED').length }}</b> 个窗口占用中</div>
       <dl><div><dt>等待窗口</dt><dd>{{ waiting }} 项</dd></div>
-          <div><dt>待核验或处理</dt><dd>{{ blocked }} 个</dd></div></dl>
+          <div><dt>回收中</dt><dd>{{ reclaiming }} 个</dd></div></dl>
       <button class="ap-link" @click="navigate({menu:'resources'})">查看资源与队列</button>
     </aside>
   </div>

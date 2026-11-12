@@ -20,16 +20,11 @@ async def recover(service):
                          "WHERE r.status IN ('QUEUED','RETRY_WAIT') AND a.status!='RUNNING'"):
         store.update("work_request", row["id"], status="CANCELLED", version=row["version"]+1,
                      error_data='{"error":"服务中断后父执行已停止；未启动的子操作已取消"}')
-    # Work is not replayed. 服务中断后没有执行在跑，仓库直接把遗留窗口回收掉，不留无主窗口。
+    # Work is not replayed. 服务中断后没有执行在跑：把遗留租约交给催债人回收。
+    # 历史 UNKNOWN 只在这里一次性转入回收中，之后模型里不再产生。
     service.recovered = True
     for lease in store.all("SELECT * FROM resource_lease WHERE status IN ('OPENING','ACTIVE','CLOSING','UNKNOWN') ORDER BY id"):
-        rid = service.submit_work("ziniao.release", {"lease_id": lease["id"]},
-                                  execution_id=lease["execution_id"], control=True, source="recovery")
-        try:
-            await service.wait(rid)
-        except Exception:
-            # The executor and request retain the actual exception and full trace.
-            pass
+        service.pool.mark_closing(lease, "服务重启，等待回收")
     for command in store.all("SELECT * FROM control_command WHERE status='SUBMITTED'"):
         service.repository.confirm(command["id"], error={"error": "服务在命令确认前中断，请核对实际结果"})
     if service.fault:

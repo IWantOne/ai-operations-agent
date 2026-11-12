@@ -46,6 +46,8 @@ class QueueService:
         self.stopping = set()
         self.finishing = set()
         self.started = set()
+        self.reclaim_attempts = {}
+        self.reclaim_interval = 5.0
         self.commit_errors = {}
         self.fault = None
         self.errors = OrderedDict()
@@ -245,10 +247,7 @@ class QueueService:
                 evidence, status = exception_details(exc), "TIMEOUT" if isinstance(exc, TimeoutError) else "FAILED"
                 if row["kind"] == "task.run":
                     self._log(eid, "execution_error", evidence)
-                if row["kind"] in {"ziniao.acquire", "ziniao.release", "ziniao.inspect"} and self.store.one(
-                    "SELECT id FROM resource_lease WHERE execution_id=? AND status='UNKNOWN'", (eid,)):
-                    status = "NEEDS_REVIEW"
-                elif row["kind"] in {"script.run", "tool.call"} and not self.replay_safe(row) and not isinstance(exc, (ValueError, KeyError, TimeoutError)):
+                if row["kind"] in {"script.run", "tool.call"} and not self.replay_safe(row) and not isinstance(exc, (ValueError, KeyError, TimeoutError)):
                     status = "NEEDS_REVIEW"
             self.finishing.add(rid)
             if row["kind"] == "task.run":
@@ -267,7 +266,7 @@ class QueueService:
                         self.errors[rid] = exc
                         status = "NEEDS_REVIEW"
                 unresolved = self.store.all("SELECT id,shop_id,error_message FROM resource_lease WHERE execution_id=? "
-                                             "AND status IN ('OPENING','ACTIVE','CLOSING','UNKNOWN')", (eid,))
+                                             "AND status IN ('OPENING','ACTIVE','CLOSING')", (eid,))
                 reviews = self.store.all("SELECT id,error_data FROM work_request WHERE parent_attempt_id=? AND status='NEEDS_REVIEW'", (aid,))
                 if unresolved or reviews:
                     if status not in {"CANCELLED", "TIMEOUT"}:
@@ -457,12 +456,28 @@ class QueueService:
                 self._queue_expiry(row)
         for lease in self.store.all("SELECT * FROM resource_lease WHERE status='ACTIVE' AND expires_at<=?", (self.clock(),)):
             self._queue_expiry(self.execution(lease["execution_id"]))
-        # 到期后再等一个租约时长仍未回收：仓库强制关窗，租约转 UNKNOWN 交人工核验。
+        # 催债人：该回收的租约转 CLOSING，再逐个关窗；失败就留在 CLOSING，下次再试。
         grace = self.timing_settings.read()["window_lease_seconds"]
-        for lease in self.store.all(
-                "SELECT * FROM resource_lease WHERE status IN ('ACTIVE','CLOSING') AND expires_at<=?",
-                (self.clock() - grace,)):
-            await self.pool.force_reclaim(lease, "租约到期且执行未响应，已强制关闭窗口")
+        for lease in self.store.all("SELECT * FROM resource_lease WHERE status='ACTIVE'"):
+            if lease["expires_at"] and lease["expires_at"] <= self.clock() - grace:
+                self.pool.mark_closing(lease, "租约到期且执行未响应，等待回收")
+            elif self._execution_gone(lease["execution_id"]):
+                self.pool.mark_closing(lease, "执行已结束但窗口未归还，等待回收")
+        now = time.monotonic()
+        for lease in self.store.all("SELECT * FROM resource_lease WHERE status='CLOSING'"):
+            if now - self.reclaim_attempts.get(lease["id"], 0) < self.reclaim_interval:
+                continue
+            self.reclaim_attempts[lease["id"]] = now
+            try:
+                await self.pool.reclaim(lease)
+            except Exception:
+                pass
+
+    def _execution_gone(self, eid):
+        if eid in self.running or eid in self.runtime.processes:
+            return False
+        return not self.store.one(
+            "SELECT id FROM work_request WHERE execution_id=? AND status IN ('QUEUED','RETRY_WAIT','RUNNING')", (eid,))
 
     def _queue_expiry(self, execution):
         row = self.repository.get(execution["request_id"])
@@ -510,7 +525,7 @@ class QueueService:
                 if self.fault:
                     raise PersistedFailure(self.fault)
                 raise RuntimeError(f"仍有未确认完成的工作请求：{[r['id'] for r in incomplete]}")
-            pending = self.store.all("SELECT * FROM resource_lease WHERE status IN ('ACTIVE','OPENING','CLOSING','UNKNOWN')")
+            pending = self.store.all("SELECT * FROM resource_lease WHERE status IN ('ACTIVE','OPENING','CLOSING')")
             if pending:
                 raise RuntimeError("服务退出时窗口尚未释放：" + "; ".join(
                     f"店铺 {x['shop_id']}：{x['error_message'] or '未取得关闭确认'}" for x in pending))

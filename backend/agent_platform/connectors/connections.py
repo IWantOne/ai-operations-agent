@@ -440,7 +440,7 @@ class Connections:
             else:
                 browser._command()
             if save:
-                leases = self.store.one("SELECT id FROM resource_lease WHERE status IN ('OPENING','ACTIVE','CLOSING','UNKNOWN') LIMIT 1")
+                leases = self.store.one("SELECT id FROM resource_lease WHERE status IN ('OPENING','ACTIVE','CLOSING') LIMIT 1")
                 active = self.store.one("SELECT id FROM execution_info WHERE status IN ('STARTING','RUNNING','PAUSED') LIMIT 1")
                 if leases or active:
                     raise ValueError("请等待当前执行结束、窗口归还后再切换连接。")
