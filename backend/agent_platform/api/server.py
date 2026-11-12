@@ -18,7 +18,7 @@ from .state import object_value, task_facts
 from ..queueing.connections import register_connections, seal_input
 
 DIST = Path(__file__).resolve().parents[3] / "frontend" / "dist"
-ACTIONS = {"run", "enable", "disable", "pause", "resume", "cancel", "continue", "shutdown"}
+ACTIONS = {"run", "retry_case", "enable", "disable", "pause", "resume", "cancel", "continue", "shutdown"}
 MANAGEMENT = {"create_employee", "edit_employee", "delete_employee", "create_task", "edit_task", "delete_task"}
 
 
@@ -86,6 +86,19 @@ def start_panel(manager, port=8765, *, browser_label="紫鸟", shutdown_event=No
         if name not in ACTIONS or name == "shutdown":
             raise ValueError("操作不可用")
         identity = int(values["id"])
+        if name == "retry_case":
+            case = manager.store.one("SELECT * FROM feedback_case WHERE id=?", (identity,))
+            if case is None:
+                raise ValueError("差评记录不存在")
+            if case["status"] not in {"MANUAL", "NEW"}:
+                raise ValueError("只有需人工或待处理的差评可以重试")
+            task_id = int(values.get("task_id") or 0)
+            task = manager.store.one("SELECT * FROM task_info WHERE id=?", (task_id,))
+            if task is None or task["handler"] != "feedback.process":
+                raise ValueError("没有找到差评处理任务")
+            manager.store.update("feedback_case", identity, status="NEW", reason="", updated_at=manager.clock())
+            return {"request_id": manager.submit(task_id, operation_key=values["operation_key"],
+                                                 input_data={"case_id": identity, "limit": 1})}
         if name in {"run", "enable", "disable", "continue"}:
             if name == "continue":
                 execution = manager.store.one("SELECT task_id FROM execution_info WHERE id=?", (identity,))
@@ -98,7 +111,8 @@ def start_panel(manager, port=8765, *, browser_label="紫鸟", shutdown_event=No
             if name != "disable" and task["handler"] not in manager.jobs:
                 raise ValueError("请先编辑任务，选择已注册的执行函数")
         if name == "run":
-            return {"request_id": manager.submit(identity, operation_key=values["operation_key"])}
+            return {"request_id": manager.submit(identity, operation_key=values["operation_key"],
+                                                 input_data=values.get("input_data"))}
         elif name in ("enable", "disable"):
             manager.store.update("task_info", identity, enabled=int(name == "enable"))
             LogWriter(manager.store, "execution_log").write(

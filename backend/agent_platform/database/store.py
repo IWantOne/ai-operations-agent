@@ -42,6 +42,7 @@ class Store:
         self._add_column("store_info", "oauth", "TEXT NOT NULL DEFAULT ''")
         self._add_column("feedback_case", "reported_at", "REAL")
         self._add_column("feedback_case", "report_error", "TEXT NOT NULL DEFAULT ''")
+        self._add_column("feedback_case", "execution_id", "INTEGER")
 
     def _add_column(self, table: str, column: str, definition: str) -> None:
         columns = {row[1] for row in self.connection.execute(f"PRAGMA table_info({table})")}

@@ -1,4 +1,4 @@
-﻿CREATE TABLE IF NOT EXISTS platform_setting (
+CREATE TABLE IF NOT EXISTS platform_setting (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
@@ -183,6 +183,7 @@ CREATE TABLE IF NOT EXISTS feedback_case (
     status TEXT NOT NULL DEFAULT 'NEW',
     reason TEXT NOT NULL DEFAULT '',
     evidence TEXT NOT NULL DEFAULT '',
+    execution_id INTEGER,
     case_ref TEXT NOT NULL DEFAULT '',
     reported_at REAL,
     report_error TEXT NOT NULL DEFAULT '',

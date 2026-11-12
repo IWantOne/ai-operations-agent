@@ -41,6 +41,7 @@ def register(manager):
         counts = {"checked": 0, "removed": 0, "submitted": 0, "manual": 0, "kept": 0}
 
         for case in cases:
+            manager.store.update("feedback_case", case["id"], execution_id=ctx.id)
             binding = bindings.get(str(case["sid"]))
             if not binding or not binding.get("browser_id"):
                 mark(case, "MANUAL", f"店铺 sid={case['sid']} 没有映射到紫鸟账号", {})
@@ -137,6 +138,7 @@ def register(manager):
                 except Exception:
                     pass
 
+        counts["completed"] = True
         ctx.log("feedback_processed", counts)
         return counts
 

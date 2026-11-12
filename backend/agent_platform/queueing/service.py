@@ -549,7 +549,7 @@ class QueueService:
                 "leases": self.store.all("SELECT * FROM resource_lease ORDER BY id"),
                 "resources": self.store.all("SELECT * FROM resource_info ORDER BY id"),
                 "cases": self.store.all("SELECT id,sid,store_name,marketplace_id,order_id,rating,status,reason,"
-                                        "case_ref,updated_at FROM feedback_case ORDER BY id"),
+                                        "execution_id,case_ref,updated_at FROM feedback_case ORDER BY id"),
                 "accepting": self.accepting, "draining": self.draining,
                 "fault": self.fault,
                 "settings": {"retry": self.retry_settings.read(), "queue": self.queue_settings.read(),

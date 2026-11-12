@@ -90,11 +90,11 @@ async function refresh() {
       error.value = "读取平台状态失败：" + e.message;
   }
 }
-async function action(name, id) {
+async function action(name, id, extra) {
   if (busy.value || stopped) return;
   busy.value = true;
   try {
-    await runAction(name, id, state.value.panel.token);
+    await runAction(name, id, state.value.panel.token, extra);
     if (name === "shutdown") {
       error.value = "";
       notice.value = "服务正在收尾，队列已保留。可继续查看日志和执行进度。";

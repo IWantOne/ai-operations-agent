@@ -19,7 +19,7 @@ export async function request(path, options) {
   return body;
 }
 
-export function runAction(action, id, token) {
+export function runAction(action, id, token, extra = {}) {
   return request("action", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -27,6 +27,7 @@ export function runAction(action, id, token) {
       action,
       id,
       token,
+      ...extra,
       operation_key: crypto.randomUUID(),
     }),
   });

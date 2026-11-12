@@ -51,7 +51,7 @@ function parse(value) {
 }
 function describe(data) {
   return Object.entries(data)
-    .filter(([, value]) => value !== null && value !== "" && typeof value !== "object")
+    .filter(([key, value]) => key !== "completed" && value !== null && value !== "" && typeof value !== "object")
     .slice(0, 5)
     .map(([key, value]) => `${LABELS[key] || key} ${value}`)
     .join(" · ");
@@ -98,6 +98,10 @@ const caseCounts = computed(() => {
   return Object.entries(counts).map(([status, n]) => `${CASE_LABELS[status] || status} ${n}`).join(" · ");
 });
 const pendingCases = computed(() => cases.value.filter((item) => item.status === "NEW").length);
+async function focusExecution(id) {
+  if (!open.value.has(id)) await toggle(id);
+  document.getElementById("exec-" + id)?.scrollIntoView({ behavior: "smooth", block: "center" });
+}
 </script>
 <template>
   <div class="ap-inlineexecution">
@@ -105,13 +109,14 @@ const pendingCases = computed(() => cases.value.filter((item) => item.status ===
       <div class="ap-caseshead">
         <h2>差评明细</h2>
         <span class="ap-muted">{{ caseCounts }}</span>
-        <button v-if="pendingCases" class="ap-btn" :disabled="busy" @click="action('run', task.id)">
+        <button v-if="pendingCases" class="ap-btn" :disabled="busy"
+                @click="action('run', task.id, {input_data: {limit: pendingCases}})">
           处理 {{ pendingCases }} 条待处理
         </button>
       </div>
       <table class="ap-case-table">
         <thead>
-          <tr><th>订单</th><th>店铺</th><th>星级</th><th>状态</th><th>原因</th><th>更新时间</th></tr>
+          <tr><th>订单</th><th>店铺</th><th>星级</th><th>状态</th><th>原因</th><th>更新时间</th><th>操作</th></tr>
         </thead>
         <tbody>
           <tr v-for="c in cases" :key="c.id">
@@ -121,6 +126,13 @@ const pendingCases = computed(() => cases.value.filter((item) => item.status ===
             <td><span :class="['ap-badge', caseTone(c.status)]">{{ CASE_LABELS[c.status] || c.status }}</span></td>
             <td class="ap-case-reason">{{ c.reason || "—" }}</td>
             <td class="ap-case-time">{{ time(c.updated_at) }}</td>
+            <td class="ap-case-actions">
+              <button v-if="c.status === 'MANUAL'" class="ap-btn" :disabled="busy"
+                      @click="action('retry_case', c.id, {task_id: task.id})">重试</button>
+              <button v-if="c.execution_id" class="ap-link" @click="focusExecution(c.execution_id)">
+                执行 #{{ c.execution_id }}
+              </button>
+            </td>
           </tr>
         </tbody>
       </table>
@@ -155,7 +167,7 @@ const pendingCases = computed(() => cases.value.filter((item) => item.status ===
 
     <div v-if="!rows.length" class="ap-empty">暂无执行记录</div>
     <div v-else class="ap-executions">
-      <article v-for="r in rows" :key="r.id" class="ap-execrow">
+      <article v-for="r in rows" :key="r.id" :id="'exec-' + r.id" class="ap-execrow">
         <button class="ap-exechead" :aria-expanded="open.has(r.id)" @click="toggle(r.id)">
           <time>{{ time(r.started_at) }}</time>
           <span :class="['ap-badge', tone(r)]">{{ states[r.status] || r.status }}</span>
@@ -230,6 +242,9 @@ const pendingCases = computed(() => cases.value.filter((item) => item.status ===
 .ap-case-table th:nth-child(3) {width:60px}
 .ap-case-table th:nth-child(4) {width:90px}
 .ap-case-table th:nth-child(6) {width:100px}
+.ap-case-table th:nth-child(7) {width:120px}
+.ap-case-actions {white-space:nowrap}
+.ap-case-actions .ap-btn {margin-right:8px}
 .ap-case-table th {text-align:left;color:var(--ap-muted);font-weight:500;padding:6px 8px;border-bottom:1px solid var(--ap-line)}
 .ap-case-table td {padding:6px 8px;border-bottom:1px solid var(--ap-line);vertical-align:top}
 .ap-case-reason {max-width:520px;overflow-wrap:anywhere}
