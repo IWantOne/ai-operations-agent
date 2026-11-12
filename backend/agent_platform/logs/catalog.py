@@ -32,6 +32,7 @@ GROUPS = [
     ("resource_log", "resources", "window", "", {
         "RECONCILED": "窗口核验完成", "INSPECT_FAILED": "窗口核验失败", "ACQUIRED": "获得窗口",
         "OPEN_REJECTED": "开窗被拒且核验未打开", "OPEN_FAILED": "打开窗口失败", "OWNERSHIP_CONFLICT": "窗口归属冲突",
+        "RECLAIMED": "强制回收无主窗口",
         "CLOSED": "归还并关闭窗口", "CLOSE_FAILED": "关闭窗口失败"}),
     # 连接器事件：日志与异常共用 ConnectorCode，CLI 与 WebDriver 写同一组码。
     ("resource_log", "ziniao", "connection", "ziniao", {

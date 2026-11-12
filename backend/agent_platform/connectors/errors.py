@@ -3,7 +3,8 @@
 框架只有两种连接器失败，用类型表达，不给异常对象挂临时属性：
 
 - ConnectorError（基类）：远端结果不明。占用必须保留，等人工核验。
-- Foreign：窗口由外部持有，不归工作台所有，不得接管或关闭。
+- Foreign：窗口由外部持有，不归工作台所有；池子借用时会先强制回收（关闭）再重新打开，
+  调用方不得直接接管。
 
 ConnectorCode 是连接器唯一的码表：既是 resource_log 的 action，也是异常的 code。
 适配器不自己造 action 字符串，日志和异常因此说的是同一件事。
@@ -37,7 +38,7 @@ class ConnectorError(RuntimeError):
 
 
 class Foreign(ConnectorError):
-    """窗口由外部持有，不归工作台所有，不得接管或关闭。"""
+    """窗口由外部持有，不归工作台所有；池子借用时会先强制回收（关闭）再重新打开。"""
 
     def __init__(self, message, code=ConnectorCode.FOREIGN):
         super().__init__(message, code)
