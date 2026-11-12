@@ -192,7 +192,14 @@ async function toggleCase(item) {
               </div>
               <p v-else class="ap-muted">这次执行没有步骤记录</p>
             </template>
-            <p v-else class="ap-muted">这条记录没有关联执行号（旧数据）</p>
+            <template v-else>
+              <p class="ap-case-exec">
+                记录：{{ time(row.updated_at) }} ·
+                {{ detail.status.labels[row.status] || row.status }}
+              </p>
+              <p class="ap-muted">{{ row.reason || "—" }}</p>
+              <p class="ap-muted">这条是加执行号之前处理的记录，所以没有批次号；状态和原因就是当时的处理结果。</p>
+            </template>
           </div>
         </li>
       </ul>
