@@ -4,6 +4,7 @@
 表单不会打开，此时如实记录授权受阻，不重试、不换账号绕过。表单打开后每一步都先看页面
 像不像这一步，不像就停下并记录，不盲目继续点击。
 """
+import json
 import re
 
 from . import pages
@@ -39,18 +40,22 @@ def _case_id(page):
 FORM_JS = r"""(()=>{const n=s=>(s||'').replace(/\s+/g,' ').trim();
 const vis=e=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0&&r.top>=0&&r.top<innerHeight&&r.left>=0;};
 const out={dropdowns:[],options:[],buttons:[]};
-for(const e of document.querySelectorAll('*')){
-  if(!vis(e))continue;
+const walk=root=>{for(const e of root.querySelectorAll('*')){
+  if(!vis(e)){ if(e.shadowRoot) walk(e.shadowRoot); continue; }
   const r=e.getBoundingClientRect(); const t=e.tagName;
   const label=e.getAttribute&&(e.getAttribute('label')||e.getAttribute('aria-label'))||'';
   const text=n(e.innerText||'');
   if(t==='KAT-DROPDOWN'&&r.left<760&&r.top>90&&r.top<300)
-    out.dropdowns.push({x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2),top:r.top});
+    out.dropdowns.push({x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2),top:r.top,
+      text:text||n(label)});
   if(t==='KAT-OPTION'&&r.left<760)
     out.options.push({text,x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)});
   if(t==='KAT-BUTTON'&&label&&r.left<760)
-    out.buttons.push({label,x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)});
-}
+    out.buttons.push({label,disabled:!!(e.disabled||e.hasAttribute('disabled')),
+      x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)});
+  if(e.shadowRoot) walk(e.shadowRoot);
+}};
+walk(document);
 out.dropdowns.sort((a,b)=>a.top-b.top);
 return JSON.stringify(out);})()"""
 
@@ -77,6 +82,16 @@ async def _form_state(ctx, shop):
     return json.loads(raw) if isinstance(raw, str) else {}
 
 
+def _pick_option(state, choice):
+    return next((o for o in state.get("options") or [] if o["text"].startswith(choice)), None)
+
+
+def _first_option(state):
+    options = [o for o in state.get("options") or []
+               if o["text"] and not o["text"].startswith("选择一个")]
+    return options[0] if options else None
+
+
 async def _choose_reason(ctx, shop, choice):
     state = await _form_state(ctx, shop)
     dropdowns = state.get("dropdowns") or []
@@ -86,7 +101,7 @@ async def _choose_reason(ctx, shop, choice):
                    x=dropdowns[0]["x"], y=dropdowns[0]["y"])
     await ctx.sleep(1.5)
     state = await _form_state(ctx, shop)
-    option = next((o for o in state.get("options") or [] if o["text"].startswith(choice)), None)
+    option = _pick_option(state, choice)
     if not option:
         return False
     await ctx.tool("browser.click_point", shop=shop, x=option["x"], y=option["y"])
@@ -98,7 +113,7 @@ async def _choose_reason(ctx, shop, choice):
                        x=dropdowns[1]["x"], y=dropdowns[1]["y"])
         await ctx.sleep(1.5)
         state = await _form_state(ctx, shop)
-        option = next((o for o in state.get("options") or [] if o["text"].startswith(choice)), None)
+        option = _pick_option(state, choice) or _first_option(state)
         if option:
             await ctx.tool("browser.click_point", shop=shop, x=option["x"], y=option["y"])
             await ctx.sleep(1.5)
@@ -164,6 +179,13 @@ async def run(ctx, shop, order_id, decision=None):
             evidence["page_text"] = (await _page(ctx, shop)).get("text", "")[:3000]
             return "MANUAL", f"理由表单里没有找到“{choice}”选项", evidence
         evidence["steps"].append({"step": "理由", "choice": choice})
+        state = await _form_state(ctx, shop)
+        submit = next((b for b in state.get("buttons") or [] if b["label"] == "提交"), None)
+        evidence["form"] = {"dropdowns": [d.get("text") for d in state.get("dropdowns") or []],
+                            "submit_disabled": bool(submit and submit.get("disabled"))}
+        if not submit or submit.get("disabled"):
+            evidence["page_text"] = (await _page(ctx, shop)).get("text", "")[:3000]
+            return "MANUAL", "理由表单没有选全（提交按钮不可用），页面已记录", evidence
         submitted = await _click_label(ctx, shop, "提交")
         evidence["steps"].append({"step": "提交", "clicked": submitted})
         if not submitted:
