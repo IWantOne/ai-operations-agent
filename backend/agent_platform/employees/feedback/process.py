@@ -4,18 +4,16 @@
 也不能让一条 case 的失败中断整批。
 """
 import json
-import time
 
 from .bindings import load_bindings, url_for
 from .cases import judge
-from . import apply, pages
+from . import apply, pages, repository
 from ...resources import market
 
 
 def register(manager):
     def mark(case, status, reason, evidence):
-        manager.store.update("feedback_case", case["id"], status=status, reason=reason,
-                             evidence=json.dumps(evidence, ensure_ascii=False), updated_at=time.time())
+        repository.mark(manager, case["id"], status, reason, evidence)
 
     async def capture(ctx, shop, case, label, evidence):
         """理由已经落库之后才截图；失败直接跳过。"""
@@ -26,13 +24,12 @@ def register(manager):
         path = shot.get("path") if isinstance(shot, dict) else None
         if path:
             evidence["screenshot"] = path
-            manager.store.update("feedback_case", case["id"],
-                                 evidence=json.dumps(evidence, ensure_ascii=False))
+            repository.update_case(manager, case["id"],
+                                   evidence=json.dumps(evidence, ensure_ascii=False))
 
     async def process(ctx):
         limit = int(ctx.input.get("limit", 3))
-        cases = manager.store.all(
-            "SELECT * FROM feedback_case WHERE status='NEW' ORDER BY id LIMIT ?", (limit,))
+        cases = repository.new_cases(manager, limit)
         if not cases:
             ctx.log("feedback_processed", {"checked": 0, "reason": "没有待处理的差评"})
             return
@@ -41,7 +38,7 @@ def register(manager):
         counts = {"checked": 0, "removed": 0, "submitted": 0, "manual": 0, "kept": 0}
 
         for case in cases:
-            manager.store.update("feedback_case", case["id"], execution_id=ctx.id)
+            repository.set_execution(manager, case["id"], ctx.id)
             binding = bindings.get(str(case["sid"]))
             if not binding or not binding.get("browser_id"):
                 mark(case, "MANUAL", f"店铺 sid={case['sid']} 没有映射到紫鸟账号", {})
@@ -101,10 +98,25 @@ def register(manager):
                 kind = pages.page_kind(state)
                 evidence = {"url": state.get("url"), "title": state.get("title"), "pages": trail}
                 if kind == "login":
-                    mark(case, "MANUAL", "页面跳到了登录页，需要先在该店铺里人工登录", evidence)
-                    await capture(ctx, shop, case, f"feedback-login-{case['order_id']}", evidence)
-                    counts["manual"] += 1
-                    continue
+                    # 打开反馈页时才弹登录页：紫鸟已填好账号密码，工作台补点“登录”后重试一次。
+                    state = await market.wait_login(ctx, shop, login_wait)
+                    if state.get("gate") == "LOGGED_IN":
+                        try:
+                            await pages.open(ctx, shop, case["marketplace_id"])
+                            state, trail = await pages.find_order(ctx, shop, case["order_id"])
+                            kind = pages.page_kind(state)
+                            evidence = {"url": state.get("url"), "title": state.get("title"), "pages": trail}
+                        except Exception as exc:
+                            evidence = {}
+                            mark(case, "MANUAL", f"登录后打开反馈页失败：{exc}", evidence)
+                            await capture(ctx, shop, case, f"feedback-{case['order_id']}", evidence)
+                            counts["manual"] += 1
+                            continue
+                    if kind == "login":
+                        mark(case, "MANUAL", "页面跳到了登录页，紫鸟自动登录没有通过，需要人工登录", evidence)
+                        await capture(ctx, shop, case, f"feedback-login-{case['order_id']}", evidence)
+                        counts["manual"] += 1
+                        continue
 
                 status, reason, extra = judge(state, case["order_id"])
                 evidence.update(extra)
