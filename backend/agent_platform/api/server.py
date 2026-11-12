@@ -167,6 +167,17 @@ def start_panel(manager, port=8765, *, browser_label="紫鸟", shutdown_event=No
                         "error": json.loads(row["error_data"] or "null")})
                 if url.path == "/api/session":
                     return self.json(200, panel)
+                if url.path == "/api/details":
+                    task_id = parse_qs(url.query).get("task_id")
+                    if not task_id:
+                        raise ValueError("需要 task_id")
+                    task = manager.store.one("SELECT id,employee_key FROM task_info WHERE id=?", (int(task_id[-1]),))
+                    if task is None:
+                        raise ValueError("任务不存在")
+                    provider = manager.details.get(task["employee_key"])
+                    if provider is None:
+                        return self.json(200, {"detail": None})
+                    return self.json(200, {"detail": provider(manager, task)})
                 if url.path == "/api/logs/query":
                     query = {key: values[-1] for key, values in parse_qs(url.query).items()}
                     options = {key: query[key] for key in ("source", "level", "category", "module", "event_type", "provider", "q", "call_id") if key in query}

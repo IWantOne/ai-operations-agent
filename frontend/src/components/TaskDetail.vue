@@ -1,5 +1,5 @@
 <script setup>
-import { computed, inject, reactive, ref } from "vue";
+import { computed, inject, onMounted, reactive, ref, watch } from "vue";
 import WorkRequests from "./WorkRequests.vue";
 import { attempts, request, states, stamp, when } from "../api/platform";
 const props = defineProps({ task: { type: Object, required: true } });
@@ -87,17 +87,41 @@ const tone = (row) =>
       : active(row) ? "running" : "queued";
 const time = (seconds) => when(seconds);
 
-const CASE_LABELS = { NEW: "待处理", MANUAL: "需人工", SUBMITTED: "已提交", REMOVED: "已移除", REJECTED: "审核后保留" };
-const caseTone = (status) =>
-  status === "NEW" ? "queued" : status === "REMOVED" || status === "SUBMITTED" ? "done"
-    : status === "REJECTED" ? "running" : "failed";
-const cases = computed(() => props.task.employee_key === "feedback" ? (state.value.cases || []) : []);
-const caseCounts = computed(() => {
-  const counts = {};
-  for (const item of cases.value) counts[item.status] = (counts[item.status] || 0) + 1;
-  return Object.entries(counts).map(([status, n]) => `${CASE_LABELS[status] || status} ${n}`).join(" · ");
-});
-const pendingCases = computed(() => cases.value.filter((item) => item.status === "NEW").length);
+const detail = ref(null);
+const detailError = ref("");
+async function loadDetail() {
+  try {
+    detail.value = (await request("details?task_id=" + props.task.id)).detail;
+  } catch (e) {
+    detailError.value = e.message;
+  }
+}
+onMounted(loadDetail);
+watch(() => props.task.id, loadDetail);
+const detailRows = computed(() => detail.value?.rows || []);
+const rowActionVisible = (row) => {
+  const rule = detail.value?.row_action?.when;
+  return rule ? (rule.in || []).includes(row[rule.key]) : true;
+};
+const expandedCase = ref(null);
+const caseExecution = (item) =>
+  item.execution_id ? state.value.executions.find((row) => row.id === item.execution_id) : null;
+const casesForExecution = (id) => detailRows.value.filter((item) => item.execution_id === id);
+async function toggleCase(item) {
+  if (expandedCase.value === item.id) {
+    expandedCase.value = null;
+    return;
+  }
+  expandedCase.value = item.id;
+  const execution = caseExecution(item);
+  if (execution && !logs[execution.id]) {
+    try {
+      logs[execution.id] = await request("logs?execution_id=" + execution.id);
+    } catch (e) {
+      logErrors[execution.id] = e.message;
+    }
+  }
+}
 async function focusExecution(id) {
   if (!open.value.has(id)) await toggle(id);
   document.getElementById("exec-" + id)?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -105,37 +129,76 @@ async function focusExecution(id) {
 </script>
 <template>
   <div class="ap-inlineexecution">
-    <div v-if="cases.length" class="ap-cases">
+    <div v-if="detail" class="ap-cases">
       <div class="ap-caseshead">
-        <h2>差评明细</h2>
-        <span class="ap-muted">{{ caseCounts }}</span>
-        <button v-if="pendingCases" class="ap-btn" :disabled="busy"
-                @click="action('run', task.id, {input_data: {limit: pendingCases}})">
-          处理 {{ pendingCases }} 条待处理
+        <h2>{{ detail.title }}</h2>
+        <span class="ap-muted">{{ detail.summary }}</span>
+        <button v-if="detail.action" class="ap-btn" :disabled="busy"
+                @click="action(detail.action.name, task.id, {input_data: detail.action.input})">
+          {{ detail.action.label }}
         </button>
       </div>
       <table class="ap-case-table">
         <thead>
-          <tr><th>订单</th><th>店铺</th><th>星级</th><th>状态</th><th>原因</th><th>更新时间</th><th>操作</th></tr>
+          <tr>
+            <th v-for="col in detail.columns" :key="col.key">{{ col.label }}</th>
+            <th v-if="detail.row_action">操作</th>
+          </tr>
         </thead>
         <tbody>
-          <tr v-for="c in cases" :key="c.id">
-            <td>{{ c.order_id }}</td>
-            <td>{{ c.store_name || c.sid }}</td>
-            <td>{{ c.rating }}★</td>
-            <td><span :class="['ap-badge', caseTone(c.status)]">{{ CASE_LABELS[c.status] || c.status }}</span></td>
-            <td class="ap-case-reason">{{ c.reason || "—" }}</td>
-            <td class="ap-case-time">{{ time(c.updated_at) }}</td>
-            <td class="ap-case-actions">
-              <button v-if="c.status === 'MANUAL'" class="ap-btn" :disabled="busy"
-                      @click="action('retry_case', c.id, {task_id: task.id})">重试</button>
-              <button v-if="c.execution_id" class="ap-link" @click="focusExecution(c.execution_id)">
-                执行 #{{ c.execution_id }}
-              </button>
-            </td>
-          </tr>
+          <template v-for="row in detailRows" :key="row.id">
+            <tr class="ap-case-row" :class="{ open: expandedCase === row.id }" @click="toggleCase(row)">
+              <td v-for="col in detail.columns" :key="col.key">
+                <span v-if="col.key === detail.status.key"
+                      :class="['ap-badge', detail.status.tones[row[col.key]] || 'queued']">
+                  {{ detail.status.labels[row[col.key]] || row[col.key] }}
+                </span>
+                <template v-else-if="col.type === 'time'">{{ time(row[col.key]) }}</template>
+                <span v-else-if="col.key === 'reason'" class="ap-case-reason">{{ row[col.key] || "—" }}</span>
+                <template v-else>{{ row[col.key] }}{{ col.suffix || "" }}</template>
+              </td>
+              <td v-if="detail.row_action" class="ap-case-actions">
+                <button v-if="rowActionVisible(row)" class="ap-btn" :disabled="busy"
+                        @click.stop="action(detail.row_action.name, row.id, {task_id: task.id})">
+                  {{ detail.row_action.label }}
+                </button>
+                <span v-if="row.execution_id" class="ap-link">执行 #{{ row.execution_id }}</span>
+              </td>
+            </tr>
+            <tr v-if="expandedCase === row.id" class="ap-case-detail">
+              <td :colspan="detail.columns.length + (detail.row_action ? 1 : 0)">
+                <template v-if="caseExecution(row)">
+                  <p class="ap-case-exec">
+                    执行 #{{ caseExecution(row).id }} · {{ states[caseExecution(row).status] || caseExecution(row).status }}
+                    · {{ time(caseExecution(row).started_at) }}
+                    · {{ Number(caseExecution(row).elapsed_seconds || 0).toFixed(1) }}s
+                    <button class="ap-link" @click.stop="navigate({ menu: 'logs', execution_id: caseExecution(row).id })">
+                      查看日志列表
+                    </button>
+                  </p>
+                  <p v-if="caseExecution(row).error_message" class="ap-issue">{{ human(caseExecution(row).error_message) }}</p>
+                  <p class="ap-muted">{{ summary(caseExecution(row)) || "—" }}</p>
+                  <div v-if="logs[caseExecution(row).id]?.length" class="ap-timeline">
+                    <div class="ap-timeline-track">
+                      <button v-for="l in logs[caseExecution(row).id]" :key="l.table + ':' + l.id"
+                              :class="['ap-node', l.level === 'ERROR' ? 'failed'
+                                : l.action === 'window_wait' ? 'wait' : 'step']">
+                        <time>{{ time(l.occurred_at) }}</time>
+                        <span class="ap-node-symbol">{{ l.level === "ERROR" ? "!" : l.action === "window_wait" ? "◷" : "✓" }}</span>
+                        <strong>{{ l.action }}</strong>
+                        <small>{{ l.table }}</small>
+                      </button>
+                    </div>
+                  </div>
+                  <p v-else class="ap-muted">这次执行没有步骤记录</p>
+                </template>
+                <p v-else class="ap-muted">这条还没有关联执行（等待处理）</p>
+              </td>
+            </tr>
+          </template>
         </tbody>
       </table>
+      <p v-if="detailError" role="alert">{{ detailError }}</p>
     </div>
 
     <div class="ap-timelinehead">
@@ -180,6 +243,10 @@ async function focusExecution(id) {
         <div v-if="open.has(r.id)" class="ap-execbody">
           <p v-if="r.error_message" class="ap-issue">{{ r.error_message }}</p>
           <p v-if="r.pause_reason" class="ap-issue">暂停原因：{{ r.pause_reason }}</p>
+          <p v-if="casesForExecution(r.id).length" class="ap-muted">
+            处理订单：
+            <span v-for="c in casesForExecution(r.id)" :key="c.id">{{ c.order_id }}（{{ c.store_name }}） </span>
+          </p>
           <p v-if="logErrors[r.id]" role="alert">{{ logErrors[r.id] }}</p>
 
           <div v-if="logs[r.id]?.length" class="ap-timeline" role="region" aria-label="执行步骤">
@@ -237,14 +304,18 @@ async function focusExecution(id) {
 .ap-caseshead {display:flex;align-items:baseline;gap:12px}
 .ap-caseshead h2 {margin:0}
 .ap-case-table {width:100%;border-collapse:collapse;font-size:13px;margin-top:8px;table-layout:fixed}
-.ap-case-table th:nth-child(1) {width:190px}
-.ap-case-table th:nth-child(2) {width:130px}
+.ap-case-table th:nth-child(1) {width:180px}
+.ap-case-table th:nth-child(2) {width:140px}
 .ap-case-table th:nth-child(3) {width:60px}
 .ap-case-table th:nth-child(4) {width:90px}
 .ap-case-table th:nth-child(6) {width:100px}
 .ap-case-table th:nth-child(7) {width:120px}
 .ap-case-actions {white-space:nowrap}
 .ap-case-actions .ap-btn {margin-right:8px}
+.ap-case-row {cursor:pointer}
+.ap-case-row:hover, .ap-case-row.open {background:var(--ap-soft)}
+.ap-case-detail td {background:var(--ap-soft);padding:10px 14px}
+.ap-case-exec {font-weight:500}
 .ap-case-table th {text-align:left;color:var(--ap-muted);font-weight:500;padding:6px 8px;border-bottom:1px solid var(--ap-line)}
 .ap-case-table td {padding:6px 8px;border-bottom:1px solid var(--ap-line);vertical-align:top}
 .ap-case-reason {max-width:520px;overflow-wrap:anywhere}

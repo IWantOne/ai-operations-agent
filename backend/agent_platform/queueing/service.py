@@ -52,6 +52,8 @@ class QueueService:
         self.fault = None
         self.errors = OrderedDict()
         self.accepting, self.draining, self.recovered = True, False, True
+        # 员工明细由员工目录自己提供，状态快照不再全量携带业务台账。
+        self.details = {}
         self.executors = {
             "control.cancel": Executor(self._cancel_operation, "commands"),
             "task.run": Executor(self._task, "tasks", interruptible=True),
@@ -64,6 +66,16 @@ class QueueService:
 
     def register(self, *args, **kwargs):
         self.definitions.register(*args, **kwargs)
+
+    def register_detail(self, employee_key, provider):
+        """登记员工的任务明细读取入口；只在打开任务详情时读取，不进状态快照。"""
+        if not isinstance(employee_key, str) or not employee_key:
+            raise ValueError("明细必须绑定员工标识")
+        if not callable(provider):
+            raise ValueError("明细读取入口必须可调用")
+        if employee_key in self.details:
+            raise ValueError(f"员工明细已登记：{employee_key}")
+        self.details[employee_key] = provider
 
     def create_task(self, *args, **kwargs):
         return self.definitions.create_task(*args, **kwargs)
