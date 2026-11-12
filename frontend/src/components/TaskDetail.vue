@@ -84,9 +84,11 @@ const rowActionVisible = (row) => {
   return rule ? (rule.in || []).includes(row[rule.key]) : true;
 };
 const expandedCase = ref(null);
+const expandable = (row) => Boolean(row.execution_id || row.reason);
 const caseExecution = (item) =>
   item.execution_id ? state.value.executions.find((row) => row.id === item.execution_id) : null;
 async function toggleCase(item) {
+  if (!expandable(item)) return;
   if (expandedCase.value === item.id) {
     expandedCase.value = null;
     return;
@@ -148,8 +150,9 @@ async function toggleCase(item) {
       </div>
       <ul class="ap-tree">
         <li v-for="row in detailRows" :key="row.id" class="ap-tree-item">
-          <div class="ap-tree-line" :class="{ open: expandedCase === row.id }" @click="toggleCase(row)">
-            <span class="ap-caret">{{ expandedCase === row.id ? "▾" : "▸" }}</span>
+          <div class="ap-tree-line" :class="{ open: expandedCase === row.id }"
+               @click="expandable(row) && toggleCase(row)">
+            <span class="ap-caret">{{ expandable(row) ? (expandedCase === row.id ? "▾" : "▸") : "" }}</span>
             <strong class="ap-tree-order">{{ row.order_id }}</strong>
             <span class="ap-tree-store">{{ row.store_name }}</span>
             <span class="ap-tree-rating">{{ row.rating }}★</span>
@@ -189,7 +192,7 @@ async function toggleCase(item) {
               </div>
               <p v-else class="ap-muted">这次执行没有步骤记录</p>
             </template>
-            <p v-else class="ap-muted">这条还没有关联执行（等待处理）</p>
+            <p v-else class="ap-muted">这条记录没有关联执行号（旧数据）</p>
           </div>
         </li>
       </ul>
