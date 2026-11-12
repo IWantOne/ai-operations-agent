@@ -101,6 +101,31 @@ const pendingCases = computed(() => cases.value.filter((item) => item.status ===
 </script>
 <template>
   <div class="ap-inlineexecution">
+    <div v-if="cases.length" class="ap-cases">
+      <div class="ap-caseshead">
+        <h2>差评明细</h2>
+        <span class="ap-muted">{{ caseCounts }}</span>
+        <button v-if="pendingCases" class="ap-btn" :disabled="busy" @click="action('run', task.id)">
+          处理 {{ pendingCases }} 条待处理
+        </button>
+      </div>
+      <table class="ap-case-table">
+        <thead>
+          <tr><th>订单</th><th>店铺</th><th>星级</th><th>状态</th><th>原因</th><th>更新时间</th></tr>
+        </thead>
+        <tbody>
+          <tr v-for="c in cases" :key="c.id">
+            <td>{{ c.order_id }}</td>
+            <td>{{ c.store_name || c.sid }}</td>
+            <td>{{ c.rating }}★</td>
+            <td><span :class="['ap-badge', caseTone(c.status)]">{{ CASE_LABELS[c.status] || c.status }}</span></td>
+            <td class="ap-case-reason">{{ c.reason || "—" }}</td>
+            <td class="ap-case-time">{{ time(c.updated_at) }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
     <div class="ap-timelinehead">
       <h2>执行记录</h2>
       <div class="ap-actions">
@@ -126,31 +151,6 @@ const pendingCases = computed(() => cases.value.filter((item) => item.status ===
     <div v-for="r in pending" :key="r.id" class="ap-issue">
       请求 #{{ r.id }} · 等待派发
       <button class="ap-btn" :disabled="busy" @click="action('cancel', r.id)">取消排队</button>
-    </div>
-
-    <div v-if="cases.length" class="ap-cases">
-      <div class="ap-caseshead">
-        <h2>差评明细</h2>
-        <span class="ap-muted">{{ caseCounts }}</span>
-        <button v-if="pendingCases" class="ap-btn" :disabled="busy" @click="action('run', task.id)">
-          处理 {{ pendingCases }} 条待处理
-        </button>
-      </div>
-      <table class="ap-case-table">
-        <thead>
-          <tr><th>订单</th><th>店铺</th><th>星级</th><th>状态</th><th>原因</th><th>更新时间</th></tr>
-        </thead>
-        <tbody>
-          <tr v-for="c in cases" :key="c.id">
-            <td>{{ c.order_id }}</td>
-            <td>{{ c.store_name || c.sid }}</td>
-            <td>{{ c.rating }}★</td>
-            <td><span :class="['ap-badge', caseTone(c.status)]">{{ CASE_LABELS[c.status] || c.status }}</span></td>
-            <td class="ap-case-reason">{{ c.reason || "—" }}</td>
-            <td class="ap-case-time">{{ time(c.updated_at) }}</td>
-          </tr>
-        </tbody>
-      </table>
     </div>
 
     <div v-if="!rows.length" class="ap-empty">暂无执行记录</div>
