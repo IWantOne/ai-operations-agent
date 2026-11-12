@@ -1,6 +1,6 @@
 """Window ownership facts and single external operations; no dispatcher."""
 import time
-from ..connectors.errors import is_foreign, no_effect
+from ..connectors.errors import Foreign, is_foreign, no_effect
 from ..logs.errors import exception_details
 from ..logs.writer import LogWriter
 from ..settings.timing import TimingSettings
@@ -73,7 +73,14 @@ class ResourcePool:
     async def acquire_once(self, lease_id):
         lease = self.get(lease_id)
         try:
-            window = await self.browser.open(lease["shop_id"])
+            try:
+                window = await self.browser.open(lease["shop_id"])
+            except Foreign:
+                # 窗口在运行但没有租约：按“只有工作台借窗口”的模型，这就是本池遗留，
+                # 仓库先回收（关掉）再重新借，不把“拿不到店铺”判成失败。
+                await self.browser.close(lease["shop_id"])
+                self._log(RECLAIMED, lease, {"operation": "reclaim_leftover"})
+                window = await self.browser.open(lease["shop_id"])
             now = self.clock()
             duration = self.lease_seconds if self.lease_seconds is not None else TimingSettings(self.store).read()["window_lease_seconds"]
             with self.store.transaction():
