@@ -228,15 +228,6 @@ inner.click();
 return JSON.stringify({clicked:true,label:(host.getAttribute('label')||'').trim()});})()"""
 
 
-# 账号卡片默认折叠：点开它才会列出站点行。展开控件只认真实鼠标点击。
-ACCOUNT_CARD_JS = r"""(()=>{const rows=[...document.querySelectorAll('button.full-page-account-switcher-account-details')]
- .filter(r=>r.querySelector('.full-page-account-switcher-account-expander-icon'));
-if(rows.length!==1)return JSON.stringify({found:false,count:rows.length});
-const r=rows[0];r.scrollIntoView({block:'center'});
-const b=r.getBoundingClientRect();
-return JSON.stringify({found:true,x:Math.round(b.x+b.width/2),y:Math.round(b.y+b.height/2)});})()"""
-
-
 async def switch_market(ctx, shop, code, timeout):
     """在店铺当前域名打开账号切换器，选中目标站点行，点底部确认，再回读落地站点。"""
     label = CHINESE.get(code, code)
@@ -262,10 +253,9 @@ async def switch_market(ctx, shop, code, timeout):
             break
         if expanded < 1:
             expanded += 1
-            result = await ctx.tool("browser.evaluate", shop=shop, expression=ACCOUNT_CARD_JS)
-            card = json.loads(result) if isinstance(result, str) else (result if isinstance(result, dict) else {})
-            if card.get("x") is not None:
-                await ctx.tool("browser.click_point", shop=shop, x=card["x"], y=card["y"])
+            state = await read(ctx, shop)
+            if state.get("accountCard"):
+                await ctx.tool("browser.real_click", shop=shop, selector=state["accountCard"])
                 await ctx.sleep(3)
                 continue
         await ctx.sleep(2)
