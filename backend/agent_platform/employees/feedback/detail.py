@@ -1,4 +1,5 @@
 """差评明细：只读查询，供任务详情面板按需读取，不进入状态快照。"""
+from . import repository
 
 STATUS_LABELS = {"NEW": "待处理", "MANUAL": "需人工", "SUBMITTED": "已提交",
                  "REMOVED": "已移除", "REJECTED": "审核后保留"}
@@ -8,10 +9,11 @@ LIMIT = 200
 
 
 def detail(manager, task):
-    rows = manager.store.all(
-        "SELECT id,sid,store_name,marketplace_id,order_id,rating,status,reason,execution_id,case_ref,updated_at "
-        "FROM feedback_case ORDER BY id DESC LIMIT ?", (LIMIT,))
-    counts = manager.store.all("SELECT status,count(*) AS total FROM feedback_case GROUP BY status")
+    rows = repository.detail_rows(manager, LIMIT)
+    runs = repository.case_runs(manager, [row["id"] for row in rows])
+    for row in rows:
+        row["runs"] = runs.get(row["id"], [])
+    counts = repository.counts(manager)
     summary = " · ".join(f"{STATUS_LABELS.get(row['status'], row['status'])} {row['total']}"
                          for row in counts) or "暂无差评记录"
     pending = next((row["total"] for row in counts if row["status"] == "NEW"), 0)

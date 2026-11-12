@@ -84,22 +84,25 @@ const rowActionVisible = (row) => {
   return rule ? (rule.in || []).includes(row[rule.key]) : true;
 };
 const expandedCase = ref(null);
-const expandable = (row) => Boolean(row.execution_id || row.reason);
-const caseExecution = (item) =>
-  item.execution_id ? state.value.executions.find((row) => row.id === item.execution_id) : null;
-async function toggleCase(item) {
+const expandedRun = ref(null);
+const expandable = (row) => Boolean(row.execution_id || row.runs?.length || row.reason);
+function toggleCase(item) {
   if (!expandable(item)) return;
-  if (expandedCase.value === item.id) {
-    expandedCase.value = null;
+  expandedCase.value = expandedCase.value === item.id ? null : item.id;
+  expandedRun.value = null;
+}
+async function toggleRun(run) {
+  if (!run.execution_id) return;
+  if (expandedRun.value === run.id) {
+    expandedRun.value = null;
     return;
   }
-  expandedCase.value = item.id;
-  const execution = caseExecution(item);
-  if (execution && !logs[execution.id]) {
+  expandedRun.value = run.id;
+  if (!logs[run.execution_id]) {
     try {
-      logs[execution.id] = await request("logs?execution_id=" + execution.id);
+      logs[run.execution_id] = await request("logs?execution_id=" + run.execution_id);
     } catch (e) {
-      logErrors[execution.id] = e.message;
+      logErrors[run.execution_id] = e.message;
     }
   }
 }
@@ -167,38 +170,39 @@ async function toggleCase(item) {
             </button>
           </div>
           <div v-if="expandedCase === row.id" class="ap-tree-exec">
-            <template v-if="caseExecution(row)">
-              <p class="ap-case-exec">
-                执行 #{{ caseExecution(row).id }} · {{ states[caseExecution(row).status] || caseExecution(row).status }}
-                · {{ time(caseExecution(row).started_at) }}
-                · {{ Number(caseExecution(row).elapsed_seconds || 0).toFixed(1) }}s
-                <button class="ap-link" @click.stop="navigate({ menu: 'logs', execution_id: caseExecution(row).id })">
-                  查看日志列表
-                </button>
-              </p>
-              <p v-if="caseExecution(row).error_message" class="ap-issue">{{ human(caseExecution(row).error_message) }}</p>
-              <p class="ap-muted">{{ summary(caseExecution(row)) || "—" }}</p>
-              <div v-if="logs[caseExecution(row).id]?.length" class="ap-timeline">
-                <div class="ap-timeline-track">
-                  <button v-for="l in logs[caseExecution(row).id]" :key="l.table + ':' + l.id"
-                          :class="['ap-node', l.level === 'ERROR' ? 'failed'
-                            : l.action === 'window_wait' ? 'wait' : 'step']">
-                    <time>{{ time(l.occurred_at) }}</time>
-                    <span class="ap-node-symbol">{{ l.level === "ERROR" ? "!" : l.action === "window_wait" ? "◷" : "✓" }}</span>
-                    <strong>{{ l.action }}</strong>
-                    <small>{{ l.table }}</small>
-                  </button>
+            <template v-if="row.runs?.length">
+              <div v-for="run in row.runs" :key="run.id" class="ap-run">
+                <div class="ap-run-line" @click.stop="toggleRun(run)">
+                  <span class="ap-caret">{{ run.execution_id ? (expandedRun === run.id ? "▾" : "▸") : "" }}</span>
+                  <strong>执行 #{{ run.execution_id || "—" }}</strong>
+                  <span class="ap-run-time">{{ time(run.at) }}</span>
+                  <span :class="['ap-badge', detail.status.tones[run.status] || 'queued']">
+                    {{ detail.status.labels[run.status] || run.status }}
+                  </span>
+                  <span class="ap-run-reason">{{ run.reason || "" }}</span>
+                </div>
+                <div v-if="expandedRun === run.id" class="ap-run-logs">
+                  <div v-if="logs[run.execution_id]?.length" class="ap-timeline">
+                    <div class="ap-timeline-track">
+                      <button v-for="l in logs[run.execution_id]" :key="l.table + ':' + l.id"
+                              :class="['ap-node', l.level === 'ERROR' ? 'failed'
+                                : l.action === 'window_wait' ? 'wait' : 'step']">
+                        <time>{{ time(l.occurred_at) }}</time>
+                        <span class="ap-node-symbol">{{ l.level === "ERROR" ? "!" : l.action === "window_wait" ? "◷" : "✓" }}</span>
+                        <strong>{{ l.action }}</strong>
+                        <small>{{ l.table }}</small>
+                      </button>
+                    </div>
+                  </div>
+                  <p v-else class="ap-muted">这次执行没有步骤记录</p>
                 </div>
               </div>
-              <p v-else class="ap-muted">这次执行没有步骤记录</p>
+            </template>
+            <template v-else-if="row.execution_id">
+              <p class="ap-muted">这条记录没有处理历史（旧数据），当前批次：执行 #{{ row.execution_id }}</p>
             </template>
             <template v-else>
-              <p class="ap-case-exec">
-                记录：{{ time(row.updated_at) }} ·
-                {{ detail.status.labels[row.status] || row.status }}
-              </p>
-              <p class="ap-muted">{{ row.reason || "—" }}</p>
-              <p class="ap-muted">这条是加执行号之前处理的记录，所以没有批次号；状态和原因就是当时的处理结果。</p>
+              <p class="ap-muted">这条还没有关联执行（等待处理）</p>
             </template>
           </div>
         </li>
@@ -226,6 +230,13 @@ async function toggleCase(item) {
 .ap-tree-time {width:100px;flex:none;color:var(--ap-muted);font-variant-numeric:tabular-nums;text-align:right}
 .ap-tree-line .ap-btn {flex:none}
 .ap-tree-exec {padding:6px 4px 12px 34px;background:var(--ap-soft)}
+.ap-run {border-top:1px dashed var(--ap-line)}
+.ap-run:first-child {border-top:none}
+.ap-run-line {display:flex;align-items:center;gap:8px;padding:4px 0;cursor:pointer;font-size:13px}
+.ap-run-line:hover {background:var(--ap-panel)}
+.ap-run-time {color:var(--ap-muted);font-variant-numeric:tabular-nums}
+.ap-run-reason {flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ap-muted)}
+.ap-run-logs {padding:4px 0 8px 20px}
 .ap-case-exec {font-weight:500}
 @media (max-width: 720px) {
   .ap-tree-order, .ap-tree-store {width:auto}

@@ -3,7 +3,8 @@ MODULES = {"system": "工作台系统", "execution": "任务执行", "runtime": 
            "tools": "工具调用", "resources": "窗口管理", "ziniao": "紫鸟连接"}
 EVENT_TYPES = {"system": "系统运行", "settings": "配置变更", "task": "任务执行与控制",
                "schedule": "任务调度", "window": "窗口借还", "connection": "接口通信",
-               "script": "脚本运行", "tool": "工具调用", "feedback": "差评处理", "custom": "未登记事件"}
+               "script": "脚本运行", "tool": "工具调用", "feedback": "差评处理",
+               "video": "摄影需求", "claims": "收货短缺索赔", "custom": "未登记事件"}
 PROVIDERS = {"ziniao": "紫鸟"}
 LEVELS = {"DEBUG": "调试", "INFO": "信息", "WARNING": "警告", "ERROR": "错误", "CRITICAL": "严重错误"}
 SOURCE_MODULES = {"system_log": "system", "execution_log": "execution", "runtime_log": "runtime",
@@ -29,6 +30,14 @@ GROUPS = [
         "feedback_synced": "差评同步完成", "feedback_sync_failed": "差评同步失败",
         "feedback_sync_skipped": "差评同步跳过", "feedback_processed": "差评处理完成",
         "feedback_reported": "差评结果回传完成", "feedback_report_failed": "差评结果回传失败"}),
+    ("execution_log", "execution", "video", "", {
+        "video_pulled": "摄影需求拉取完成", "video_reported": "成片回传批次完成",
+        "video_delivered": "成片已回传", "video_delivery_failed": "成片回传失败",
+        "video_marked_failed": "已写失败原因", "video_blocked": "成片回传待处理"}),
+    ("execution_log", "execution", "claims", "", {
+        "claim_synced": "索赔收件箱同步完成", "claim_checked": "索赔核验批次完成",
+        "claim_verified": "索赔核验通过", "claim_submitted": "索赔已开案",
+        "claim_writeback": "Case 回填完成", "claim_writeback_failed": "Case 回填失败"}),
     ("resource_log", "resources", "window", "", {
         "RECONCILED": "窗口核验完成", "INSPECT_FAILED": "窗口核验失败", "ACQUIRED": "获得窗口",
         "OPEN_REJECTED": "开窗被拒且核验未打开", "OPEN_FAILED": "打开窗口失败", "OWNERSHIP_CONFLICT": "窗口归属冲突",

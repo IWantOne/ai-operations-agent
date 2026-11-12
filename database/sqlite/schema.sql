@@ -195,6 +195,97 @@ CREATE TABLE IF NOT EXISTS feedback_case (
 
 CREATE INDEX IF NOT EXISTS feedback_case_status ON feedback_case(status, updated_at);
 
+-- 每条明细的处理批次：一次处理一行，日志跟着 execution_id 走。
+CREATE TABLE IF NOT EXISTS feedback_case_run (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    case_id INTEGER NOT NULL REFERENCES feedback_case(id),
+    execution_id INTEGER,
+    status TEXT NOT NULL,
+    reason TEXT NOT NULL DEFAULT '',
+    at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS feedback_case_run_case ON feedback_case_run(case_id, at);
+
+CREATE TABLE IF NOT EXISTS erp_video_requirement (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    requirement_id TEXT NOT NULL UNIQUE,
+    asin TEXT NOT NULL DEFAULT '',
+    site TEXT NOT NULL DEFAULT '',
+    country TEXT NOT NULL DEFAULT '',
+    video_type TEXT NOT NULL DEFAULT '',
+    video_ratio TEXT NOT NULL DEFAULT '',
+    store_sid TEXT NOT NULL DEFAULT '',
+    store_name TEXT NOT NULL DEFAULT '',
+    fingerprint TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'PENDING',
+    reason TEXT NOT NULL DEFAULT '',
+    video_url TEXT NOT NULL DEFAULT '',
+    storage_key TEXT NOT NULL DEFAULT '',
+    evidence TEXT NOT NULL DEFAULT '',
+    reopen_count INTEGER NOT NULL DEFAULT 0,
+    pulled_at REAL NOT NULL,
+    delivered_at REAL,
+    updated_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS erp_video_requirement_status ON erp_video_requirement(status, updated_at);
+
+CREATE TABLE IF NOT EXISTS claim_case (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_claim_id TEXT NOT NULL UNIQUE,
+    shipment_id TEXT NOT NULL,
+    sid TEXT NOT NULL DEFAULT '',
+    amazon_sid TEXT NOT NULL DEFAULT '',
+    country TEXT NOT NULL DEFAULT '',
+    site TEXT NOT NULL DEFAULT '',
+    store_name TEXT NOT NULL DEFAULT '',
+    quantity_source TEXT NOT NULL DEFAULT '',
+    shipped_quantity INTEGER,
+    received_quantity INTEGER,
+    shortage_quantity INTEGER,
+    materials_url TEXT NOT NULL DEFAULT '',
+    material_files TEXT NOT NULL DEFAULT '[]',
+    merchant_id TEXT NOT NULL DEFAULT '',
+    marketplace_id TEXT NOT NULL DEFAULT '',
+    claim_text TEXT NOT NULL DEFAULT '',
+    state TEXT NOT NULL DEFAULT 'INBOX',
+    reason TEXT NOT NULL DEFAULT '',
+    case_id TEXT NOT NULL DEFAULT '',
+    inquiry_status TEXT NOT NULL DEFAULT '',
+    operator_name TEXT NOT NULL DEFAULT '',
+    writeback_state TEXT NOT NULL DEFAULT '',
+    writeback_reason TEXT NOT NULL DEFAULT '',
+    evidence TEXT NOT NULL DEFAULT '',
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS claim_case_state ON claim_case(state, updated_at);
+
+CREATE TABLE IF NOT EXISTS claim_attachment (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    claim_id INTEGER NOT NULL REFERENCES claim_case(id),
+    name TEXT NOT NULL,
+    proof_type TEXT NOT NULL DEFAULT '',
+    media_type TEXT NOT NULL DEFAULT '',
+    size INTEGER NOT NULL DEFAULT 0,
+    sha256 TEXT NOT NULL DEFAULT '',
+    path TEXT NOT NULL DEFAULT '',
+    created_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS claim_attachment_claim ON claim_attachment(claim_id);
+
+CREATE TABLE IF NOT EXISTS claim_event (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    claim_id INTEGER NOT NULL REFERENCES claim_case(id),
+    kind TEXT NOT NULL,
+    payload TEXT NOT NULL DEFAULT '',
+    created_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS claim_event_claim ON claim_event(claim_id, created_at);
+
 CREATE TABLE IF NOT EXISTS store_info (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     shop_id TEXT NOT NULL UNIQUE,
