@@ -39,6 +39,24 @@ class WebDriverBrowser(Browser):
 
     # ------------------------------------------------------------ 传输层
     # 只调平台、只抛原始异常，不写日志。
+    def _discover_port(self):
+        """配置端口连不上时，按本机紫鸟进程的监听端口重新找 WebDriver。"""
+        from .discovery import client_ports, is_webdriver
+        policy = TimingSettings(self.store).read()
+        try:
+            ports = client_ports(policy["discovery_scan_seconds"])
+        except Exception:
+            return None
+        for port in ports:
+            if port == self.config.get("port"):
+                continue
+            try:
+                if is_webdriver(port, policy["discovery_probe_seconds"]):
+                    return port
+            except Exception:
+                continue
+        return None
+
     def request(self, action, **fields):
         payload = {"action": action, "requestId": str(uuid4()), **fields}
         if action != "getRunningInfo":
@@ -52,25 +70,36 @@ class WebDriverBrowser(Browser):
                     text = text.replace(json.dumps(value)[1:-1], "[REDACTED]")
             return text
 
-        client = http.client.HTTPConnection("127.0.0.1", self.config["port"],
-                                             timeout=TimingSettings(self.store).read()["webdriver_timeout_seconds"])
+        def send(port):
+            client = http.client.HTTPConnection(
+                "127.0.0.1", port, timeout=TimingSettings(self.store).read()["webdriver_timeout_seconds"])
+            try:
+                client.request("POST", "/", json.dumps(payload).encode(), {"Content-Type": "application/json"})
+                response = client.getresponse()
+                return response.status, response.read().decode("utf-8", errors="replace")
+            finally:
+                client.close()
+
         try:
-            client.request("POST", "/", json.dumps(payload).encode(), {"Content-Type": "application/json"})
-            response = client.getresponse()
-            raw = response.read().decode("utf-8", errors="replace")
-            display = safe(raw)
-            if response.status != 200:
-                raise ValueError(f"WebDriver {action}: HTTP {response.status}; 返回正文：{display}")
-            result = json.loads(raw)
-            if not isinstance(result, dict) or str(result.get("statusCode")) != "0":
-                raise ValueError(f"WebDriver {action} 被对端拒绝；返回正文：{display}")
-            if result.get("requestId") not in (None, payload["requestId"]):
-                raise ValueError(f"WebDriver {action} requestId 不匹配；返回正文：{display}")
-            return result, {"operation": action, "request_id": payload["requestId"],
-                            "port": self.config["port"], "browser_id": fields.get("browserId"),
-                            "http_status": response.status, "body": display}
-        finally:
-            client.close()
+            status, raw = send(self.config["port"])
+        except OSError:
+            # 紫鸟客户端重启后本地 API 端口会变；先按进程端口重新发现一次。
+            port = self._discover_port()
+            if not port:
+                raise
+            self.config["port"] = port
+            status, raw = send(port)
+        display = safe(raw)
+        if status != 200:
+            raise ValueError(f"WebDriver {action}: HTTP {status}; 返回正文：{display}")
+        result = json.loads(raw)
+        if not isinstance(result, dict) or str(result.get("statusCode")) != "0":
+            raise ValueError(f"WebDriver {action} 被对端拒绝；返回正文：{display}")
+        if result.get("requestId") not in (None, payload["requestId"]):
+            raise ValueError(f"WebDriver {action} requestId 不匹配；返回正文：{display}")
+        return result, {"operation": action, "request_id": payload["requestId"],
+                        "port": self.config["port"], "browser_id": fields.get("browserId"),
+                        "http_status": status, "body": display}
 
     # ------------------------------------------------------------ 公开接口
     # 调底层 → 落原始证据 → 翻译成统一异常 → 写 resource_log → 抛统一异常。

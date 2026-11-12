@@ -457,6 +457,12 @@ class QueueService:
                 self._queue_expiry(row)
         for lease in self.store.all("SELECT * FROM resource_lease WHERE status='ACTIVE' AND expires_at<=?", (self.clock(),)):
             self._queue_expiry(self.execution(lease["execution_id"]))
+        # 到期后再等一个租约时长仍未回收：仓库强制关窗，租约转 UNKNOWN 交人工核验。
+        grace = self.timing_settings.read()["window_lease_seconds"]
+        for lease in self.store.all(
+                "SELECT * FROM resource_lease WHERE status IN ('ACTIVE','CLOSING') AND expires_at<=?",
+                (self.clock() - grace,)):
+            await self.pool.force_reclaim(lease, "租约到期且执行未响应，已强制关闭窗口")
 
     def _queue_expiry(self, execution):
         row = self.repository.get(execution["request_id"])

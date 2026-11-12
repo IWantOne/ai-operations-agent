@@ -114,6 +114,23 @@ class ResourcePool:
                       lease, {"operation": "open", **details}, "ERROR")
             raise
 
+    async def force_reclaim(self, lease, reason):
+        """租约到期且执行没有响应：仓库强制关闭窗口，租约转 UNKNOWN 交人工核验。"""
+        try:
+            await self.browser.close(lease["shop_id"])
+        except BaseException as exc:
+            details = exception_details(exc)
+            self._uncertain(lease, details["error"])
+            self._log(CLOSE_FAILED, lease, {"operation": "force_reclaim", **details}, "ERROR")
+            return False
+        with self.store.transaction():
+            self.store.update("resource_info", lease["resource_id"], status="CLOSED", blocked=0,
+                              last_checked_at=self.clock(), error_message=None)
+            self.store.update("resource_lease", lease["id"], status="UNKNOWN", released_at=self.clock(),
+                              error_message=reason)
+            self._log(RECLAIMED, lease, {"operation": "force_reclaim", "reason": reason})
+        return True
+
     async def release_once(self, lease_id, *, user_stopped):
         lease = self.get(lease_id)
         if lease["status"] in {"RELEASED", "CANCELLED", "FAILED"}:
