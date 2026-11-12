@@ -146,66 +146,53 @@ async function toggleCase(item) {
           {{ detail.action.label }}
         </button>
       </div>
-      <table class="ap-case-table">
-        <thead>
-          <tr>
-            <th v-for="col in detail.columns" :key="col.key">{{ col.label }}</th>
-            <th v-if="detail.row_action">操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <template v-for="row in detailRows" :key="row.id">
-            <tr class="ap-case-row" :class="{ open: expandedCase === row.id }" @click="toggleCase(row)">
-              <td v-for="col in detail.columns" :key="col.key">
-                <span v-if="col.key === detail.status.key"
-                      :class="['ap-badge', detail.status.tones[row[col.key]] || 'queued']">
-                  {{ detail.status.labels[row[col.key]] || row[col.key] }}
-                </span>
-                <template v-else-if="col.type === 'time'">{{ time(row[col.key]) }}</template>
-                <span v-else-if="col.key === 'reason'" class="ap-case-reason">{{ row[col.key] || "—" }}</span>
-                <template v-else>{{ row[col.key] }}{{ col.suffix || "" }}</template>
-              </td>
-              <td v-if="detail.row_action" class="ap-case-actions">
-                <button v-if="rowActionVisible(row)" class="ap-btn" :disabled="busy"
-                        @click.stop="action(detail.row_action.name, row.id, {task_id: task.id})">
-                  {{ detail.row_action.label }}
+      <ul class="ap-tree">
+        <li v-for="row in detailRows" :key="row.id" class="ap-tree-item">
+          <div class="ap-tree-line" :class="{ open: expandedCase === row.id }" @click="toggleCase(row)">
+            <span class="ap-caret">{{ expandedCase === row.id ? "▾" : "▸" }}</span>
+            <strong class="ap-tree-order">{{ row.order_id }}</strong>
+            <span class="ap-tree-store">{{ row.store_name }}</span>
+            <span class="ap-tree-rating">{{ row.rating }}★</span>
+            <span :class="['ap-badge', detail.status.tones[row.status] || 'queued']">
+              {{ detail.status.labels[row.status] || row.status }}
+            </span>
+            <span class="ap-tree-reason">{{ row.reason || "" }}</span>
+            <span class="ap-tree-time">{{ time(row.updated_at) }}</span>
+            <button v-if="rowActionVisible(row)" class="ap-btn" :disabled="busy"
+                    @click.stop="action(detail.row_action.name, row.id, {task_id: task.id})">
+              {{ detail.row_action.label }}
+            </button>
+          </div>
+          <div v-if="expandedCase === row.id" class="ap-tree-exec">
+            <template v-if="caseExecution(row)">
+              <p class="ap-case-exec">
+                执行 #{{ caseExecution(row).id }} · {{ states[caseExecution(row).status] || caseExecution(row).status }}
+                · {{ time(caseExecution(row).started_at) }}
+                · {{ Number(caseExecution(row).elapsed_seconds || 0).toFixed(1) }}s
+                <button class="ap-link" @click.stop="navigate({ menu: 'logs', execution_id: caseExecution(row).id })">
+                  查看日志列表
                 </button>
-                <span v-if="row.execution_id" class="ap-link">执行 #{{ row.execution_id }}</span>
-              </td>
-            </tr>
-            <tr v-if="expandedCase === row.id" class="ap-case-detail">
-              <td :colspan="detail.columns.length + (detail.row_action ? 1 : 0)">
-                <template v-if="caseExecution(row)">
-                  <p class="ap-case-exec">
-                    执行 #{{ caseExecution(row).id }} · {{ states[caseExecution(row).status] || caseExecution(row).status }}
-                    · {{ time(caseExecution(row).started_at) }}
-                    · {{ Number(caseExecution(row).elapsed_seconds || 0).toFixed(1) }}s
-                    <button class="ap-link" @click.stop="navigate({ menu: 'logs', execution_id: caseExecution(row).id })">
-                      查看日志列表
-                    </button>
-                  </p>
-                  <p v-if="caseExecution(row).error_message" class="ap-issue">{{ human(caseExecution(row).error_message) }}</p>
-                  <p class="ap-muted">{{ summary(caseExecution(row)) || "—" }}</p>
-                  <div v-if="logs[caseExecution(row).id]?.length" class="ap-timeline">
-                    <div class="ap-timeline-track">
-                      <button v-for="l in logs[caseExecution(row).id]" :key="l.table + ':' + l.id"
-                              :class="['ap-node', l.level === 'ERROR' ? 'failed'
-                                : l.action === 'window_wait' ? 'wait' : 'step']">
-                        <time>{{ time(l.occurred_at) }}</time>
-                        <span class="ap-node-symbol">{{ l.level === "ERROR" ? "!" : l.action === "window_wait" ? "◷" : "✓" }}</span>
-                        <strong>{{ l.action }}</strong>
-                        <small>{{ l.table }}</small>
-                      </button>
-                    </div>
-                  </div>
-                  <p v-else class="ap-muted">这次执行没有步骤记录</p>
-                </template>
-                <p v-else class="ap-muted">这条还没有关联执行（等待处理）</p>
-              </td>
-            </tr>
-          </template>
-        </tbody>
-      </table>
+              </p>
+              <p v-if="caseExecution(row).error_message" class="ap-issue">{{ human(caseExecution(row).error_message) }}</p>
+              <p class="ap-muted">{{ summary(caseExecution(row)) || "—" }}</p>
+              <div v-if="logs[caseExecution(row).id]?.length" class="ap-timeline">
+                <div class="ap-timeline-track">
+                  <button v-for="l in logs[caseExecution(row).id]" :key="l.table + ':' + l.id"
+                          :class="['ap-node', l.level === 'ERROR' ? 'failed'
+                            : l.action === 'window_wait' ? 'wait' : 'step']">
+                    <time>{{ time(l.occurred_at) }}</time>
+                    <span class="ap-node-symbol">{{ l.level === "ERROR" ? "!" : l.action === "window_wait" ? "◷" : "✓" }}</span>
+                    <strong>{{ l.action }}</strong>
+                    <small>{{ l.table }}</small>
+                  </button>
+                </div>
+              </div>
+              <p v-else class="ap-muted">这次执行没有步骤记录</p>
+            </template>
+            <p v-else class="ap-muted">这条还没有关联执行（等待处理）</p>
+          </div>
+        </li>
+      </ul>
       <p v-if="detailError" role="alert">{{ detailError }}</p>
     </div>
   </div>
@@ -217,24 +204,21 @@ async function toggleCase(item) {
 .ap-cases {margin-top:18px}
 .ap-caseshead {display:flex;align-items:baseline;gap:12px}
 .ap-caseshead h2 {margin:0}
-.ap-case-table {width:100%;border-collapse:collapse;font-size:13px;margin-top:8px;table-layout:fixed}
-.ap-case-table th:nth-child(1) {width:180px}
-.ap-case-table th:nth-child(2) {width:140px}
-.ap-case-table th:nth-child(3) {width:60px}
-.ap-case-table th:nth-child(4) {width:90px}
-.ap-case-table th:nth-child(6) {width:100px}
-.ap-case-table th:nth-child(7) {width:120px}
-.ap-case-table th {text-align:left;color:var(--ap-muted);font-weight:500;padding:6px 8px;border-bottom:1px solid var(--ap-line)}
-.ap-case-table td {padding:6px 8px;border-bottom:1px solid var(--ap-line);vertical-align:top}
-.ap-case-reason {max-width:520px;overflow-wrap:anywhere}
-.ap-case-time {color:var(--ap-muted);font-variant-numeric:tabular-nums;white-space:nowrap}
-.ap-case-actions {white-space:nowrap}
-.ap-case-actions .ap-btn {margin-right:8px}
-.ap-case-row {cursor:pointer}
-.ap-case-row:hover, .ap-case-row.open {background:var(--ap-soft)}
-.ap-case-detail td {background:var(--ap-soft);padding:10px 14px}
+.ap-tree {list-style:none;margin:8px 0 0;padding:0}
+.ap-tree-item {border-bottom:1px solid var(--ap-line)}
+.ap-tree-line {display:flex;align-items:center;gap:10px;padding:8px 4px;cursor:pointer;font-size:13px}
+.ap-tree-line:hover, .ap-tree-line.open {background:var(--ap-soft)}
+.ap-caret {width:12px;flex:none;color:var(--ap-muted)}
+.ap-tree-order {width:180px;flex:none;font-weight:500;font-variant-numeric:tabular-nums}
+.ap-tree-store {width:130px;flex:none}
+.ap-tree-rating {width:40px;flex:none}
+.ap-tree-reason {flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ap-muted)}
+.ap-tree-time {width:100px;flex:none;color:var(--ap-muted);font-variant-numeric:tabular-nums;text-align:right}
+.ap-tree-line .ap-btn {flex:none}
+.ap-tree-exec {padding:6px 4px 12px 34px;background:var(--ap-soft)}
 .ap-case-exec {font-weight:500}
 @media (max-width: 720px) {
-  .ap-case-table th:nth-child(1), .ap-case-table th:nth-child(2) {width:auto}
+  .ap-tree-order, .ap-tree-store {width:auto}
+  .ap-tree-reason {display:none}
 }
 </style>
