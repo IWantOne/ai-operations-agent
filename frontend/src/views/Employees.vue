@@ -265,7 +265,7 @@ const openOwner = (key, other = {}) =>
               }}</span>
             </button>
             <div v-if="openTasks.has(t.id)" class="manage-actions task-manage">
-              <span class="task-shop">关联店铺：<ShopLink v-if="taskShopId(t)" :id="taskShopId(t)" /><span v-else class="ap-muted">未关联，可在编辑任务中选择</span></span>
+              <span v-if="t.employee_key !== 'feedback'" class="task-shop">关联店铺：<ShopLink v-if="taskShopId(t)" :id="taskShopId(t)" /><span v-else class="ap-muted">未关联，可在编辑任务中选择</span></span>
               <button class="ap-link" @click="edit('edit_task', t)">编辑任务</button>
               <button class="ap-link remove" @click="edit('delete_task', t)">删除任务</button>
             </div>

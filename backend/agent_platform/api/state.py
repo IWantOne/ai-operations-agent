@@ -32,7 +32,7 @@ def task_facts(task, state):
     if rows:
         latest = rows[0]
         if latest["status"] in {"FAILED", "CANCELLED", "TIMEOUT", "NEEDS_REVIEW"}:
-            return "failed", {"NEEDS_REVIEW": "需核验，查看具体原因", "FAILED": "执行失败", "CANCELLED": "执行已取消", "TIMEOUT": "执行超时"}[latest["status"]]
+            return "failed", {"NEEDS_REVIEW": "需人工", "FAILED": "失败", "CANCELLED": "已取消", "TIMEOUT": "超时"}[latest["status"]]
     if not task.get("enabled", True):
         return "queued", "已停用"
     if object_value(task.get("sync_data")).get("schedules"):

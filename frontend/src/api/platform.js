@@ -45,6 +45,18 @@ export const stamp = (seconds) =>
   seconds == null
     ? "—"
     : new Date(seconds * 1000).toLocaleString("zh-CN", { hour12: false });
+// 执行记录和用例时间都要能分清今天/昨天，不能只给时分秒。
+export function when(seconds) {
+  if (seconds == null) return "—";
+  const date = new Date(seconds * 1000);
+  const now = new Date();
+  const hm = date.toLocaleTimeString("zh-CN", { hour12: false, hour: "2-digit", minute: "2-digit" });
+  if (date.toDateString() === now.toDateString()) return "今天 " + hm;
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (date.toDateString() === yesterday.toDateString()) return "昨天 " + hm;
+  return date.toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" }) + " " + hm;
+}
 export const columns = {
   queued: "待执行",
   running: "执行中",
@@ -64,7 +76,7 @@ export const states = {
   STARTING: "启动中",
   RUNNING: "执行中",
   PAUSED: "人工暂停",
-  NEEDS_REVIEW: "需核验，查看具体原因",
+  NEEDS_REVIEW: "需人工",
   RETRY_WAIT: "等待自动重试",
   QUEUED: "已排队",
   FAILED: "失败",

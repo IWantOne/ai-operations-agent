@@ -1,7 +1,7 @@
 <script setup>
 import { computed, inject, reactive, ref } from "vue";
 import WorkRequests from "./WorkRequests.vue";
-import { attempts, request, states, stamp } from "../api/platform";
+import { attempts, request, states, stamp, when } from "../api/platform";
 const props = defineProps({ task: { type: Object, required: true } });
 const { state, action, busy, navigate } = inject("workbench");
 
@@ -56,6 +56,19 @@ function describe(data) {
     .map(([key, value]) => `${LABELS[key] || key} ${value}`)
     .join(" · ");
 }
+const ERROR_NAMES = {
+  CancelledError: "已取消",
+  TimeoutError: "超时",
+  ConnectionRefusedError: "紫鸟客户端未连接",
+  ConnectorError: "紫鸟调用失败",
+};
+function human(error) {
+  const text = String(error || "").split("\n")[0].trim();
+  if (!text) return "";
+  const name = text.split(":")[0].trim();
+  const detail = text.slice(name.length + 1).trim();
+  return ERROR_NAMES[name] ? `${ERROR_NAMES[name]}${detail ? "：" + detail : ""}` : text;
+}
 function summary(row) {
   if (row.pause_reason) return "暂停：" + row.pause_reason;
   const data = parse(row.result_data);
@@ -63,25 +76,28 @@ function summary(row) {
     const text = describe(data);
     if (text) return text;
   }
-  if (row.error_message) return String(row.error_message).split("\n")[0].slice(0, 90);
+  if (row.error_message) return human(row.error_message).slice(0, 90);
   if (row.wait_reason === "WINDOW") return "等待紫鸟窗口";
+  if (row.status === "SUCCEEDED" && Number(row.elapsed_seconds || 0) < 0.5) return "无待处理";
   return row.wait_reason || "";
 }
 const tone = (row) =>
   row.status === "SUCCEEDED" ? "done"
     : ["FAILED", "TIMEOUT", "NEEDS_REVIEW", "CANCELLED"].includes(row.status) ? "failed"
       : active(row) ? "running" : "queued";
-const time = (seconds) => (seconds == null ? "—" : stamp(seconds).slice(-8));
+const time = (seconds) => when(seconds);
 
 const CASE_LABELS = { NEW: "待处理", MANUAL: "需人工", SUBMITTED: "已提交", REMOVED: "已移除", REJECTED: "审核后保留" };
 const caseTone = (status) =>
-  status === "REMOVED" || status === "SUBMITTED" ? "done" : status === "REJECTED" ? "running" : "failed";
+  status === "NEW" ? "queued" : status === "REMOVED" || status === "SUBMITTED" ? "done"
+    : status === "REJECTED" ? "running" : "failed";
 const cases = computed(() => props.task.employee_key === "feedback" ? (state.value.cases || []) : []);
 const caseCounts = computed(() => {
   const counts = {};
   for (const item of cases.value) counts[item.status] = (counts[item.status] || 0) + 1;
   return Object.entries(counts).map(([status, n]) => `${CASE_LABELS[status] || status} ${n}`).join(" · ");
 });
+const pendingCases = computed(() => cases.value.filter((item) => item.status === "NEW").length);
 </script>
 <template>
   <div class="ap-inlineexecution">
@@ -110,6 +126,31 @@ const caseCounts = computed(() => {
     <div v-for="r in pending" :key="r.id" class="ap-issue">
       请求 #{{ r.id }} · 等待派发
       <button class="ap-btn" :disabled="busy" @click="action('cancel', r.id)">取消排队</button>
+    </div>
+
+    <div v-if="cases.length" class="ap-cases">
+      <div class="ap-caseshead">
+        <h2>差评明细</h2>
+        <span class="ap-muted">{{ caseCounts }}</span>
+        <button v-if="pendingCases" class="ap-btn" :disabled="busy" @click="action('run', task.id)">
+          处理 {{ pendingCases }} 条待处理
+        </button>
+      </div>
+      <table class="ap-case-table">
+        <thead>
+          <tr><th>订单</th><th>店铺</th><th>星级</th><th>状态</th><th>原因</th><th>更新时间</th></tr>
+        </thead>
+        <tbody>
+          <tr v-for="c in cases" :key="c.id">
+            <td>{{ c.order_id }}</td>
+            <td>{{ c.store_name || c.sid }}</td>
+            <td>{{ c.rating }}★</td>
+            <td><span :class="['ap-badge', caseTone(c.status)]">{{ CASE_LABELS[c.status] || c.status }}</span></td>
+            <td class="ap-case-reason">{{ c.reason || "—" }}</td>
+            <td class="ap-case-time">{{ time(c.updated_at) }}</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
 
     <div v-if="!rows.length" class="ap-empty">暂无执行记录</div>
@@ -164,27 +205,6 @@ const caseCounts = computed(() => {
         </div>
       </article>
     </div>
-    <div v-if="cases.length" class="ap-cases">
-      <div class="ap-caseshead">
-        <h2>差评明细</h2>
-        <span class="ap-muted">{{ caseCounts }}</span>
-      </div>
-      <table class="ap-case-table">
-        <thead>
-          <tr><th>订单</th><th>店铺</th><th>星级</th><th>状态</th><th>原因</th><th>更新时间</th></tr>
-        </thead>
-        <tbody>
-          <tr v-for="c in cases" :key="c.id">
-            <td>{{ c.order_id }}</td>
-            <td>{{ c.store_name || c.sid }}<small v-if="c.marketplace_id"> · {{ c.marketplace_id }}</small></td>
-            <td>{{ c.rating }}★</td>
-            <td><span :class="['ap-badge', caseTone(c.status)]">{{ CASE_LABELS[c.status] || c.status }}</span></td>
-            <td class="ap-case-reason">{{ c.reason || "—" }}</td>
-            <td class="ap-case-time">{{ time(c.updated_at) }}</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
   </div>
 </template>
 
@@ -204,7 +224,12 @@ const caseCounts = computed(() => {
 .ap-cases {margin-top:18px}
 .ap-caseshead {display:flex;align-items:baseline;gap:12px}
 .ap-caseshead h2 {margin:0}
-.ap-case-table {width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+.ap-case-table {width:100%;border-collapse:collapse;font-size:13px;margin-top:8px;table-layout:fixed}
+.ap-case-table th:nth-child(1) {width:190px}
+.ap-case-table th:nth-child(2) {width:130px}
+.ap-case-table th:nth-child(3) {width:60px}
+.ap-case-table th:nth-child(4) {width:90px}
+.ap-case-table th:nth-child(6) {width:100px}
 .ap-case-table th {text-align:left;color:var(--ap-muted);font-weight:500;padding:6px 8px;border-bottom:1px solid var(--ap-line)}
 .ap-case-table td {padding:6px 8px;border-bottom:1px solid var(--ap-line);vertical-align:top}
 .ap-case-reason {max-width:520px;overflow-wrap:anywhere}
