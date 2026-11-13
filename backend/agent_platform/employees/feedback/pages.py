@@ -214,3 +214,50 @@ async def click_text(ctx, shop, labels):
 
 async def screenshot(ctx, shop, label):
     return await ctx.tool("browser.screenshot", shop=shop, label=label)
+
+
+DEEP = r"""const deep=(root,sel)=>{const out=[];const walk=r=>{for(const e of r.querySelectorAll(sel))out.push(e);
+for(const e of r.querySelectorAll('*'))if(e.shadowRoot)walk(e.shadowRoot);};walk(root);return out;};"""
+
+CASE_LINK_JS = r"""(()=>{const a=[...document.querySelectorAll('a[href]')].find(a=>{
+try{const u=new URL(a.href);return u.pathname==='/cu/case-lobby';}catch(e){return false;}});return a?a.href:null;})()"""
+
+CASE_SEARCH_JS = r"""(()=>{DEEP
+const input=deep(document,'input').find(e=>{const t=[e.placeholder,e.getAttribute('aria-label')].join(' ');
+ return /(case|subject|问题|問題|主题|主題)/i.test(t)&&e.getClientRects().length;});
+if(!input)return false;
+input.focus();
+const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;
+setter.call(input,__ORDER__);
+input.dispatchEvent(new Event('input',{bubbles:true,composed:true}));
+input.dispatchEvent(new Event('change',{bubbles:true,composed:true}));
+input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,bubbles:true,composed:true}));
+input.dispatchEvent(new KeyboardEvent('keyup',{key:'Enter',code:'Enter',keyCode:13,bubbles:true,composed:true}));
+return true;})()"""
+
+CASE_READ_JS = r"""(()=>{DEEP
+const order=__ORDER__;
+const rows=deep(document,'kat-table-row, tr').filter(e=>(e.innerText||'').includes(order));
+const links=deep(document,'a[href],kat-link[href]').filter(a=>/case-(dashboard|details)/.test(a.href||a.getAttribute('href')||''));
+return JSON.stringify({title:document.title,url:location.href,
+ rows:rows.map(r=>({text:(r.innerText||'').slice(0,2000)})),
+ links:links.map(a=>({text:(a.innerText||a.getAttribute('label')||'').slice(0,120),href:a.href||a.getAttribute('href')}))});})()"""
+
+
+async def case_history(ctx, shop, order_id):
+    """提交后查原生 Case 历史，确认是否产生 Case；找不到入口返回 None。"""
+    link = await ctx.tool("browser.evaluate", shop=shop, expression=CASE_LINK_JS)
+    if not isinstance(link, str) or not link:
+        return None
+    await ctx.tool("browser.goto", shop=shop, url=link)
+    await ctx.sleep(2)
+    searched = await ctx.tool("browser.evaluate", shop=shop,
+                              expression=CASE_SEARCH_JS.replace("DEEP", DEEP)
+                              .replace("__ORDER__", json.dumps(order_id)))
+    if not searched:
+        return None
+    await ctx.sleep(3)
+    raw = await ctx.tool("browser.evaluate", shop=shop,
+                         expression=CASE_READ_JS.replace("DEEP", DEEP)
+                         .replace("__ORDER__", json.dumps(order_id)))
+    return json.loads(raw) if isinstance(raw, str) else None

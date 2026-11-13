@@ -209,7 +209,16 @@ async def run(ctx, shop, order_id, decision=None):
                 return "REMOVED", "亚马逊已移除该反馈", evidence
         evidence["page_text"] = (page.get("text") or "")[:3000]
         evidence["url"] = page.get("url")
-        return "MANUAL", "提交后没有识别到审核结果，请人工核对页面", evidence
+        # 结果不在列表页：查一次原生 Case 历史，确认是否产生 Case。
+        try:
+            history = await pages.case_history(ctx, shop, order_id)
+        except Exception as exc:
+            history = None
+            evidence["caseHistoryError"] = str(exc)
+        evidence["caseHistory"] = history
+        if history and history.get("rows"):
+            return "SUBMITTED", "已提交；Case 历史里已出现该订单的记录", evidence
+        return "MANUAL", "提交后没有识别到审核结果，Case 历史也没有该订单的记录，请人工核对", evidence
 
     for step, labels in (("商品反馈", REASON_LABELS), ("继续", CONTINUE_LABELS),
                          ("提交", SUBMIT_LABELS)):
